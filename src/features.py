@@ -1,13 +1,49 @@
 ﻿import re
+import nltk
 from collections import Counter
 
-import nltk
 from nltk import word_tokenize, pos_tag, ne_chunk
 from nltk.sentiment import SentimentIntensityAnalyzer
 
 
 # ============================================================
-# SENSATIONAL WORDS
+# DOWNLOAD REQUIRED NLTK RESOURCES
+# ============================================================
+
+def setup_nltk():
+    resources = [
+        ("tokenizers/punkt", "punkt"),
+        ("tokenizers/punkt_tab", "punkt_tab"),
+        ("corpora/stopwords", "stopwords"),
+        ("corpora/wordnet", "wordnet"),
+        ("corpora/omw-1.4", "omw-1.4"),
+        ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
+        ("taggers/averaged_perceptron_tagger_eng", "averaged_perceptron_tagger_eng"),
+        ("chunkers/maxent_ne_chunker", "maxent_ne_chunker"),
+        ("chunkers/maxent_ne_chunker_tab", "maxent_ne_chunker_tab"),
+        ("corpora/words", "words"),
+        ("sentiment/vader_lexicon", "vader_lexicon"),
+    ]
+
+    for resource_path, resource_name in resources:
+        try:
+            nltk.data.find(resource_path)
+        except LookupError:
+            nltk.download(resource_name, quiet=True)
+
+
+setup_nltk()
+
+
+# ============================================================
+# VADER SENTIMENT ANALYZER
+# ============================================================
+
+sia = SentimentIntensityAnalyzer()
+
+
+# ============================================================
+# SENSATIONAL / CLICKBAIT WORDS
 # ============================================================
 
 SENSATIONAL_WORDS = {
@@ -30,10 +66,6 @@ SENSATIONAL_WORDS = {
 }
 
 
-# ============================================================
-# CLICKBAIT PHRASES
-# ============================================================
-
 CLICKBAIT_PHRASES = {
     "you won't believe",
     "you will not believe",
@@ -48,36 +80,53 @@ CLICKBAIT_PHRASES = {
 
 
 # ============================================================
-# SENTIMENT ANALYZER
-# ============================================================
-
-sia = SentimentIntensityAnalyzer()
-
-
-# ============================================================
 # FEATURE EXTRACTION
 # ============================================================
 
 def extract_features(text):
 
+    if not text or not text.strip():
+        return {
+            "total_words": 0,
+            "unique_words": 0,
+            "lexical_diversity": 0,
+            "positive_score": 0,
+            "negative_score": 0,
+            "neutral_score": 0,
+            "compound_score": 0,
+            "sentiment": "Neutral",
+            "exclamation_count": 0,
+            "question_count": 0,
+            "uppercase_word_count": 0,
+            "sensational_words": [],
+            "clickbait_phrases": [],
+            "repeated_words": [],
+            "noun_count": 0,
+            "verb_count": 0,
+            "adjective_count": 0,
+            "named_entities": []
+        }
+
     # --------------------------------------------------------
-    # Basic words
+    # Tokenization
     # --------------------------------------------------------
 
-    words = re.findall(
-        r"\b[a-zA-Z]+\b",
-        text.lower()
-    )
+    tokens = word_tokenize(text)
+
+    words = [
+        token.lower()
+        for token in tokens
+        if token.isalpha()
+    ]
 
     total_words = len(words)
-
     unique_words = len(set(words))
 
-    if total_words > 0:
-        lexical_diversity = unique_words / total_words
-    else:
-        lexical_diversity = 0.0
-
+    lexical_diversity = (
+        unique_words / total_words
+        if total_words > 0
+        else 0
+    )
 
     # --------------------------------------------------------
     # SENTIMENT ANALYSIS
@@ -92,40 +141,32 @@ def extract_features(text):
 
     if compound_score >= 0.05:
         sentiment = "Positive"
-
     elif compound_score <= -0.05:
         sentiment = "Negative"
-
     else:
         sentiment = "Neutral"
-
 
     # --------------------------------------------------------
     # WRITING STYLE
     # --------------------------------------------------------
 
     exclamation_count = text.count("!")
-
     question_count = text.count("?")
 
     uppercase_word_count = sum(
-        1
-        for word in text.split()
+        1 for word in text.split()
         if word.isupper() and len(word) > 1
     )
-
 
     # --------------------------------------------------------
     # SENSATIONAL WORDS
     # --------------------------------------------------------
 
-    sensational_words = []
-
-    for word in words:
-
-        if word in SENSATIONAL_WORDS:
-            sensational_words.append(word)
-
+    sensational_found = [
+        word
+        for word in words
+        if word in SENSATIONAL_WORDS
+    ]
 
     # --------------------------------------------------------
     # CLICKBAIT PHRASES
@@ -133,13 +174,11 @@ def extract_features(text):
 
     text_lower = text.lower()
 
-    clickbait_phrases = []
-
-    for phrase in CLICKBAIT_PHRASES:
-
-        if phrase in text_lower:
-            clickbait_phrases.append(phrase)
-
+    clickbait_found = [
+        phrase
+        for phrase in CLICKBAIT_PHRASES
+        if phrase in text_lower
+    ]
 
     # --------------------------------------------------------
     # REPEATED WORDS
@@ -147,138 +186,104 @@ def extract_features(text):
 
     word_counts = Counter(words)
 
-    repeated_words = {
-        word: count
+    repeated_words = [
+        (word, count)
         for word, count in word_counts.items()
         if count > 1
-    }
+    ]
 
+    repeated_words.sort(
+        key=lambda x: x[1],
+        reverse=True
+    )
 
     # --------------------------------------------------------
-    # POS TAGGING
+    # POS ANALYSIS
     # --------------------------------------------------------
 
-    try:
+    tagged_tokens = pos_tag(tokens)
 
-        tokens = word_tokenize(text)
+    noun_count = sum(
+        1 for _, tag in tagged_tokens
+        if tag.startswith("NN")
+    )
 
-        tagged_words = pos_tag(tokens)
+    verb_count = sum(
+        1 for _, tag in tagged_tokens
+        if tag.startswith("VB")
+    )
 
-        noun_count = sum(
-            1
-            for word, tag in tagged_words
-            if tag.startswith("NN")
-        )
-
-        verb_count = sum(
-            1
-            for word, tag in tagged_words
-            if tag.startswith("VB")
-        )
-
-        adjective_count = sum(
-            1
-            for word, tag in tagged_words
-            if tag.startswith("JJ")
-        )
-
-    except Exception:
-
-        noun_count = 0
-        verb_count = 0
-        adjective_count = 0
-
+    adjective_count = sum(
+        1 for _, tag in tagged_tokens
+        if tag.startswith("JJ")
+    )
 
     # --------------------------------------------------------
     # NAMED ENTITY RECOGNITION
     # --------------------------------------------------------
 
+    tree = ne_chunk(tagged_tokens)
+
     named_entities = []
 
-    try:
+    for chunk in tree:
 
-        tokens = word_tokenize(text)
+        if hasattr(chunk, "label"):
 
-        tagged_words = pos_tag(tokens)
+            entity_name = " ".join(
+                word
+                for word, tag in chunk.leaves()
+            )
 
-        entity_tree = ne_chunk(tagged_words)
+            entity_label = chunk.label()
 
-        for chunk in entity_tree:
-
-            if hasattr(chunk, "label"):
-
-                entity_name = " ".join(
-                    word
-                    for word, tag in chunk.leaves()
-                )
-
-                entity_label = chunk.label()
-
-                named_entities.append(
-                    (entity_name, entity_label)
-                )
-
-    except Exception:
-
-        named_entities = []
-
+            named_entities.append(
+                (entity_name, entity_label)
+            )
 
     # --------------------------------------------------------
     # RETURN ALL FEATURES
     # --------------------------------------------------------
 
     return {
-
-        # Basic statistics
         "total_words": total_words,
         "unique_words": unique_words,
         "lexical_diversity": lexical_diversity,
 
-        # Sentiment
         "positive_score": positive_score,
         "negative_score": negative_score,
         "neutral_score": neutral_score,
         "compound_score": compound_score,
         "sentiment": sentiment,
 
-        # Writing style
         "exclamation_count": exclamation_count,
         "question_count": question_count,
         "uppercase_word_count": uppercase_word_count,
 
-        # Sensational / clickbait
-        "sensational_words": sensational_words,
-        "clickbait_phrases": clickbait_phrases,
-
-        # Repeated words
+        "sensational_words": sensational_found,
+        "clickbait_phrases": clickbait_found,
         "repeated_words": repeated_words,
 
-        # POS
         "noun_count": noun_count,
         "verb_count": verb_count,
         "adjective_count": adjective_count,
 
-        # NER
         "named_entities": named_entities
     }
 
 
 # ============================================================
-# TEST
+# LOCAL TEST
 # ============================================================
 
 if __name__ == "__main__":
 
     sample_text = """
-    BREAKING! Scientists have discovered an unbelievable
-    secret that could change the world. You won't believe
-    what happens next! Share this before it's too late.
+    This is a shocking news article!
+    You won't believe what happens next.
     """
 
     result = extract_features(sample_text)
 
-    print("\n========== FEATURE EXTRACTION TEST ==========\n")
-
     for key, value in result.items():
-
         print(f"{key}: {value}")
