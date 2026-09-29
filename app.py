@@ -1,5 +1,4 @@
 ﻿import streamlit as st
-import pandas as pd
 
 from src.classifier import classify_news
 from src.features import extract_features
@@ -7,14 +6,13 @@ from src.history import save_prediction, load_history
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
-    page_title="Fake News Detection System",
+    page_title="Fake News Detection AI",
     page_icon="📰",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 
@@ -26,7 +24,7 @@ with st.sidebar:
 
     st.title("📰 Fake News AI")
 
-    st.divider()
+    st.markdown("---")
 
     st.subheader("🔍 System Modules")
 
@@ -43,22 +41,19 @@ with st.sidebar:
     - 📊 Prediction History
     """)
 
-    st.divider()
+    st.markdown("---")
 
     st.subheader("🤖 Model")
 
-    st.info("TF-IDF + Logistic Regression")
+    st.write("TF-IDF + Logistic Regression")
 
-    st.divider()
+    st.markdown("---")
 
-    st.caption(
-        "Fake News Detection System\n"
-        "Machine Learning + NLP"
-    )
+    st.caption("Machine Learning + NLP")
 
 
 # ============================================================
-# HEADER
+# MAIN TITLE
 # ============================================================
 
 st.title("📰 Fake News Detection System")
@@ -69,66 +64,53 @@ st.write(
     "likely to be FAKE or REAL."
 )
 
-st.divider()
-
 
 # ============================================================
-# ARTICLE INPUT
+# NEWS ARTICLE INPUT
 # ============================================================
 
 st.header("📝 News Article Analysis")
 
 article_text = st.text_area(
     "Enter News Article",
-    height=230,
-    placeholder="Paste the complete news article here..."
-)
-
-analyze_button = st.button(
-    "🔍 Analyze News",
-    type="primary",
-    width="stretch"
+    height=250,
+    placeholder="Paste the news article here..."
 )
 
 
 # ============================================================
-# ANALYSIS
+# ANALYZE BUTTON
 # ============================================================
 
-if analyze_button:
+if st.button("🔍 Analyze News", type="primary"):
 
     if not article_text.strip():
 
-        st.warning(
-            "⚠️ Please enter a news article before analysis."
-        )
+        st.warning("⚠️ Please enter a news article first.")
 
     else:
 
-        # ----------------------------------------------------
-        # NLP FEATURES
-        # ----------------------------------------------------
+        # ====================================================
+        # MACHINE LEARNING PREDICTION
+        # ====================================================
+
+        prediction, confidence, fake_probability, real_probability = (
+            classify_news(article_text)
+        )
+
+        # ====================================================
+        # NLP FEATURE EXTRACTION
+        # ====================================================
 
         features = extract_features(article_text)
 
-        # ----------------------------------------------------
-        # ML PREDICTION
-        # ----------------------------------------------------
-
-        (
-            classification,
-            confidence,
-            fake_probability,
-            real_probability
-        ) = classify_news(article_text)
-
-        # ----------------------------------------------------
-        # SAVE PREDICTION
-        # ----------------------------------------------------
+        # ====================================================
+        # SAVE PREDICTION HISTORY
+        # ====================================================
 
         save_prediction(
             article_text,
-            classification,
+            prediction,
             confidence,
             fake_probability,
             real_probability
@@ -140,31 +122,48 @@ if analyze_button:
 
         st.header("🎯 Prediction Result")
 
-        if classification == "FAKE":
+        if prediction == "FAKE":
 
-            st.error(
-                f"🚨 FAKE NEWS\n\n"
-                f"Confidence: {confidence * 100:.2f}%\n\n"
-                "The trained machine learning model classified "
-                "this article as FAKE based on learned textual "
-                "patterns."
-            )
+            st.error("🚨 FAKE NEWS")
 
         else:
 
-            st.success(
-                f"✓ REAL NEWS\n\n"
-                f"Confidence: {confidence * 100:.2f}%\n\n"
-                "The trained machine learning model classified "
-                "this article as REAL based on learned textual "
-                "patterns."
-            )
+            st.success("✅ REAL NEWS")
+
+        st.metric(
+            "Confidence",
+            f"{confidence * 100:.2f}%"
+        )
+
+        st.info(
+            "The trained machine learning model classified this "
+            "article based on learned textual patterns."
+        )
 
         # ====================================================
-        # PROBABILITY
+        # PREDICTION PROBABILITY
         # ====================================================
 
         st.header("📊 Prediction Probability")
+
+        probability_data = {
+            "Probability": [
+                fake_probability * 100,
+                real_probability * 100
+            ]
+        }
+
+        probability_index = [
+            "Fake",
+            "Real"
+        ]
+
+        st.bar_chart(
+            {
+                "Fake": [fake_probability * 100],
+                "Real": [real_probability * 100]
+            }
+        )
 
         col1, col2 = st.columns(2)
 
@@ -178,24 +177,9 @@ if analyze_button:
         with col2:
 
             st.metric(
-                "✓ Real Probability",
+                "✅ Real Probability",
                 f"{real_probability * 100:.2f}%"
             )
-
-        probability_df = pd.DataFrame(
-            {
-                "Probability": [
-                    fake_probability,
-                    real_probability
-                ]
-            },
-            index=["FAKE", "REAL"]
-        )
-
-        st.bar_chart(
-            probability_df,
-            width="stretch"
-        )
 
         # ====================================================
         # TEXT STATISTICS
@@ -227,10 +211,15 @@ if analyze_button:
             )
 
         # ====================================================
-        # SENTIMENT
+        # SENTIMENT ANALYSIS
         # ====================================================
 
         st.header("😊 Sentiment Analysis")
+
+        st.write(
+            f"**Overall Sentiment:** "
+            f"{features['sentiment']}"
+        )
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -238,21 +227,21 @@ if analyze_button:
 
             st.metric(
                 "Positive",
-                f"{features['positive_score']:.3f}"
+                f"{features['positive_score'] * 100:.2f}%"
             )
 
         with col2:
 
             st.metric(
                 "Negative",
-                f"{features['negative_score']:.3f}"
+                f"{features['negative_score'] * 100:.2f}%"
             )
 
         with col3:
 
             st.metric(
                 "Neutral",
-                f"{features['neutral_score']:.3f}"
+                f"{features['neutral_score'] * 100:.2f}%"
             )
 
         with col4:
@@ -262,33 +251,13 @@ if analyze_button:
                 f"{features['compound_score']:.3f}"
             )
 
-        sentiment = features["sentiment"]
-
-        if sentiment == "Positive":
-
-            st.success(
-                f"Overall Sentiment: {sentiment}"
-            )
-
-        elif sentiment == "Negative":
-
-            st.error(
-                f"Overall Sentiment: {sentiment}"
-            )
-
-        else:
-
-            st.info(
-                f"Overall Sentiment: {sentiment}"
-            )
-
         # ====================================================
         # WRITING STYLE
         # ====================================================
 
         st.header("✍️ Writing Style")
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
 
         with col1:
 
@@ -307,15 +276,8 @@ if analyze_button:
         with col3:
 
             st.metric(
-                "🔠 Capitalized Words",
+                "🔠 Uppercase Words",
                 features["uppercase_word_count"]
-            )
-
-        with col4:
-
-            st.metric(
-                "🔁 Repeated Words",
-                len(features["repeated_words"])
             )
 
         # ====================================================
@@ -324,17 +286,17 @@ if analyze_button:
 
         st.header("🚨 Sensational Language")
 
-        sensational_words = features["sensational_words"]
-
-        if sensational_words:
+        if features["sensational_words"]:
 
             st.write(
                 "Detected sensational words:"
             )
 
-            st.write(
-                ", ".join(sensational_words)
-            )
+            for word in features["sensational_words"]:
+
+                st.warning(
+                    f"⚡ {word}"
+                )
 
         else:
 
@@ -343,23 +305,21 @@ if analyze_button:
             )
 
         # ====================================================
-        # CLICKBAIT
+        # CLICKBAIT ANALYSIS
         # ====================================================
 
         st.header("🎯 Clickbait Pattern Analysis")
 
-        clickbait_phrases = features["clickbait_phrases"]
-
-        if clickbait_phrases:
+        if features["clickbait_phrases"]:
 
             st.write(
                 "Detected clickbait phrases:"
             )
 
-            for phrase in clickbait_phrases:
+            for phrase in features["clickbait_phrases"]:
 
                 st.warning(
-                    f"• {phrase}"
+                    f"🎯 {phrase}"
                 )
 
         else:
@@ -369,7 +329,7 @@ if analyze_button:
             )
 
         # ====================================================
-        # POS
+        # POS ANALYSIS
         # ====================================================
 
         st.header("🏷️ Part-of-Speech Analysis")
@@ -398,16 +358,14 @@ if analyze_button:
             )
 
         # ====================================================
-        # NER
+        # NAMED ENTITY RECOGNITION
         # ====================================================
 
         st.header("📍 Named Entity Recognition")
 
-        entities = features["named_entities"]
+        if features["named_entities"]:
 
-        if entities:
-
-            for entity, label in entities:
+            for entity, label in features["named_entities"]:
 
                 st.write(
                     f"**{entity}** — `{label}`"
@@ -415,7 +373,7 @@ if analyze_button:
 
         else:
 
-            st.info(
+            st.write(
                 "No named entities detected."
             )
 
@@ -429,127 +387,136 @@ if analyze_button:
 
         if repeated_words:
 
-            for word, count in sorted(
-                repeated_words.items(),
-                key=lambda x: x[1],
-                reverse=True
-            ):
+            for word, count in repeated_words:
 
                 st.write(
-                    f"**{word}** → {count} times"
+                    f"**{word}** — {count} times"
                 )
 
         else:
 
-            st.info(
+            st.write(
                 "No repeated words detected."
             )
 
-        # ====================================================
-        # MODEL INFORMATION
-        # ====================================================
 
-        st.header("🤖 Model Information")
+# ============================================================
+# MODEL INFORMATION
+# ============================================================
 
-        st.info(
-            "This system uses TF-IDF feature extraction with "
-            "a Logistic Regression classifier.\n\n"
-            "The model learns textual patterns from labelled "
-            "fake and real news articles.\n\n"
-            "The prediction indicates how the article resembles "
-            "patterns learned from the training dataset. It does "
-            "not independently verify the factual truth of the article."
-        )
+st.markdown("---")
+
+st.header("🤖 Model Information")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+
+    st.info(
+        "**Feature Extraction**\n\n"
+        "TF-IDF"
+    )
+
+with col2:
+
+    st.info(
+        "**Classification Model**\n\n"
+        "Logistic Regression"
+    )
+
+with col3:
+
+    st.info(
+        "**Approach**\n\n"
+        "Machine Learning + NLP"
+    )
 
 
 # ============================================================
 # PREDICTION HISTORY
 # ============================================================
 
-st.divider()
+st.markdown("---")
 
-st.header("📚 Prediction History")
+st.header("📊 Prediction History")
 
 history = load_history()
 
 if history:
 
-    history_df = pd.DataFrame(history)
+    total_predictions = len(history)
 
-    total_predictions = len(history_df)
+    fake_count = sum(
+        1
+        for item in history
+        if item["Prediction"] == "FAKE"
+    )
 
-    fake_count = (
-        history_df["Prediction"] == "FAKE"
-    ).sum()
+    real_count = sum(
+        1
+        for item in history
+        if item["Prediction"] == "REAL"
+    )
 
-    real_count = (
-        history_df["Prediction"] == "REAL"
-    ).sum()
+    # --------------------------------------------------------
+    # HISTORY SUMMARY
+    # --------------------------------------------------------
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
 
         st.metric(
-            "📊 Total Analyzed",
+            "Total Analyzed",
             total_predictions
         )
 
     with col2:
 
         st.metric(
-            "🚨 Fake Predictions",
+            "Fake",
             fake_count
         )
 
     with col3:
 
         st.metric(
-            "✓ Real Predictions",
+            "Real",
             real_count
         )
 
-    st.subheader("🕒 Previous Predictions")
-
-    # Show newest prediction first
-    history_df = history_df.iloc[::-1]
-
     # --------------------------------------------------------
-    # Display each prediction as a clean card
-    # No dataframe/chart = no canvas artifact
+    # HISTORY ENTRIES
     # --------------------------------------------------------
 
-    for index, row in history_df.iterrows():
+    st.subheader("Recent Predictions")
 
-        prediction = row["Prediction"]
+    for item in reversed(history):
+
+        prediction = item["Prediction"]
 
         if prediction == "FAKE":
 
             st.error(
-                f"🚨 FAKE NEWS\n\n"
-                f"Time: {row['Time']}\n\n"
-                f"Confidence: {row['Confidence']}\n\n"
-                f"Fake Probability: {row['Fake Probability']}\n\n"
-                f"Real Probability: {row['Real Probability']}\n\n"
-                f"Article: {row['Article']}"
+                f"🚨 **FAKE** | "
+                f"{item['Time']} | "
+                f"Confidence: {item['Confidence']}\n\n"
+                f"{item['Article']}"
             )
 
         else:
 
             st.success(
-                f"✓ REAL NEWS\n\n"
-                f"Time: {row['Time']}\n\n"
-                f"Confidence: {row['Confidence']}\n\n"
-                f"Fake Probability: {row['Fake Probability']}\n\n"
-                f"Real Probability: {row['Real Probability']}\n\n"
-                f"Article: {row['Article']}"
+                f"✅ **REAL** | "
+                f"{item['Time']} | "
+                f"Confidence: {item['Confidence']}\n\n"
+                f"{item['Article']}"
             )
 
 else:
 
     st.info(
-        "No prediction history yet. "
-        "Analyze an article to create history."
+        "No prediction history available yet."
     )
 
 
@@ -557,14 +524,9 @@ else:
 # FOOTER
 # ============================================================
 
-st.divider()
+st.markdown("---")
 
 st.caption(
-    "Fake News Detection System | "
+    "📰 Fake News Detection System | "
     "Machine Learning + Natural Language Processing"
-)
-
-st.caption(
-    "⚠️ This system is a text classification model, "
-    "not an independent fact-checking system."
 )
