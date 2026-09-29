@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+
+data/
+*.csv
+
+.venv/
+venv/
+env/
+
+.streamlit/
