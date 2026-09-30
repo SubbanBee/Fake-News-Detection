@@ -1,49 +1,64 @@
-﻿import re
-import nltk
+﻿# ============================================================
+# NLP FEATURE EXTRACTION
+# Fake News Detection System
+# ============================================================
+
+import re
 from collections import Counter
 
-from nltk import word_tokenize, pos_tag, ne_chunk
+import nltk
+
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+from nltk.stem import WordNetLemmatizer
 from nltk.sentiment import SentimentIntensityAnalyzer
 
 
 # ============================================================
-# DOWNLOAD REQUIRED NLTK RESOURCES
+# NLTK DOWNLOADS
 # ============================================================
 
-def setup_nltk():
-    resources = [
-        ("tokenizers/punkt", "punkt"),
-        ("tokenizers/punkt_tab", "punkt_tab"),
-        ("corpora/stopwords", "stopwords"),
-        ("corpora/wordnet", "wordnet"),
-        ("corpora/omw-1.4", "omw-1.4"),
-        ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
-        ("taggers/averaged_perceptron_tagger_eng", "averaged_perceptron_tagger_eng"),
-        ("chunkers/maxent_ne_chunker", "maxent_ne_chunker"),
-        ("chunkers/maxent_ne_chunker_tab", "maxent_ne_chunker_tab"),
-        ("corpora/words", "words"),
-        ("sentiment/vader_lexicon", "vader_lexicon"),
-    ]
+nltk_packages = [
+    "punkt",
+    "stopwords",
+    "wordnet",
+    "omw-1.4",
+    "averaged_perceptron_tagger",
+    "maxent_ne_chunker",
+    "words",
+    "vader_lexicon"
+]
 
-    for resource_path, resource_name in resources:
-        try:
-            nltk.data.find(resource_path)
-        except LookupError:
-            nltk.download(resource_name, quiet=True)
+for package in nltk_packages:
 
-
-setup_nltk()
+    try:
+        nltk.download(
+            package,
+            quiet=True
+        )
+    except Exception:
+        pass
 
 
 # ============================================================
-# VADER SENTIMENT ANALYZER
+# NLP OBJECTS
 # ============================================================
 
-sia = SentimentIntensityAnalyzer()
+stop_words = set(
+    stopwords.words("english")
+)
+
+stemmer = PorterStemmer()
+
+lemmatizer = WordNetLemmatizer()
+
+sentiment_analyzer = (
+    SentimentIntensityAnalyzer()
+)
 
 
 # ============================================================
-# SENSATIONAL / CLICKBAIT WORDS
+# SENSATIONAL WORDS
 # ============================================================
 
 SENSATIONAL_WORDS = {
@@ -66,6 +81,10 @@ SENSATIONAL_WORDS = {
 }
 
 
+# ============================================================
+# CLICKBAIT PHRASES
+# ============================================================
+
 CLICKBAIT_PHRASES = {
     "you won't believe",
     "you will not believe",
@@ -80,210 +99,384 @@ CLICKBAIT_PHRASES = {
 
 
 # ============================================================
-# FEATURE EXTRACTION
+# EXTRACT FEATURES
 # ============================================================
 
 def extract_features(text):
 
-    if not text or not text.strip():
-        return {
-            "total_words": 0,
-            "unique_words": 0,
-            "lexical_diversity": 0,
-            "positive_score": 0,
-            "negative_score": 0,
-            "neutral_score": 0,
-            "compound_score": 0,
-            "sentiment": "Neutral",
-            "exclamation_count": 0,
-            "question_count": 0,
-            "uppercase_word_count": 0,
-            "sensational_words": [],
-            "clickbait_phrases": [],
-            "repeated_words": [],
-            "noun_count": 0,
-            "verb_count": 0,
-            "adjective_count": 0,
-            "named_entities": []
-        }
+    # ========================================================
+    # BASIC CLEANING
+    # ========================================================
 
-    # --------------------------------------------------------
-    # Tokenization
-    # --------------------------------------------------------
+    if not text:
+        text = ""
 
-    tokens = word_tokenize(text)
+    original_text = text
 
-    words = [
-        token.lower()
-        for token in tokens
-        if token.isalpha()
-    ]
+    lowercase_text = text.lower()
 
-    total_words = len(words)
-    unique_words = len(set(words))
 
-    lexical_diversity = (
-        unique_words / total_words
-        if total_words > 0
-        else 0
+    # ========================================================
+    # TOKENIZATION
+    # ========================================================
+
+    tokens = re.findall(
+        r"\b[a-zA-Z]+\b",
+        lowercase_text
     )
 
-    # --------------------------------------------------------
+
+    # ========================================================
+    # STOPWORD REMOVAL
+    # ========================================================
+
+    filtered_tokens = [
+        token
+        for token in tokens
+        if token not in stop_words
+    ]
+
+
+    # ========================================================
+    # STEMMING
+    # ========================================================
+
+    stemmed_tokens = [
+        stemmer.stem(token)
+        for token in filtered_tokens
+    ]
+
+
+    # ========================================================
+    # LEMMATIZATION
+    # ========================================================
+
+    lemmatized_tokens = [
+        lemmatizer.lemmatize(token)
+        for token in filtered_tokens
+    ]
+
+
+    # ========================================================
+    # TEXT STATISTICS
+    # ========================================================
+
+    total_words = len(tokens)
+
+    unique_words = len(
+        set(tokens)
+    )
+
+
+    if total_words > 0:
+
+        lexical_diversity = (
+            unique_words / total_words
+        )
+
+    else:
+
+        lexical_diversity = 0.0
+
+
+    # ========================================================
     # SENTIMENT ANALYSIS
-    # --------------------------------------------------------
+    # ========================================================
 
-    sentiment_scores = sia.polarity_scores(text)
+    sentiment_scores = (
+        sentiment_analyzer.polarity_scores(
+            original_text
+        )
+    )
 
-    positive_score = sentiment_scores["pos"]
-    negative_score = sentiment_scores["neg"]
-    neutral_score = sentiment_scores["neu"]
-    compound_score = sentiment_scores["compound"]
+    positive_score = (
+        sentiment_scores["pos"]
+    )
+
+    negative_score = (
+        sentiment_scores["neg"]
+    )
+
+    neutral_score = (
+        sentiment_scores["neu"]
+    )
+
+    compound_score = (
+        sentiment_scores["compound"]
+    )
+
 
     if compound_score >= 0.05:
+
         sentiment = "Positive"
+
     elif compound_score <= -0.05:
+
         sentiment = "Negative"
+
     else:
+
         sentiment = "Neutral"
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # WRITING STYLE
-    # --------------------------------------------------------
+    # ========================================================
 
-    exclamation_count = text.count("!")
-    question_count = text.count("?")
-
-    uppercase_word_count = sum(
-        1 for word in text.split()
-        if word.isupper() and len(word) > 1
+    exclamation_count = (
+        original_text.count("!")
     )
 
-    # --------------------------------------------------------
-    # SENSATIONAL WORDS
-    # --------------------------------------------------------
-
-    sensational_found = [
-        word
-        for word in words
-        if word in SENSATIONAL_WORDS
-    ]
-
-    # --------------------------------------------------------
-    # CLICKBAIT PHRASES
-    # --------------------------------------------------------
-
-    text_lower = text.lower()
-
-    clickbait_found = [
-        phrase
-        for phrase in CLICKBAIT_PHRASES
-        if phrase in text_lower
-    ]
-
-    # --------------------------------------------------------
-    # REPEATED WORDS
-    # --------------------------------------------------------
-
-    word_counts = Counter(words)
-
-    repeated_words = [
-        (word, count)
-        for word, count in word_counts.items()
-        if count > 1
-    ]
-
-    repeated_words.sort(
-        key=lambda x: x[1],
-        reverse=True
+    question_count = (
+        original_text.count("?")
     )
 
-    # --------------------------------------------------------
-    # POS ANALYSIS
-    # --------------------------------------------------------
 
-    tagged_tokens = pos_tag(tokens)
-
-    noun_count = sum(
-        1 for _, tag in tagged_tokens
-        if tag.startswith("NN")
+    uppercase_words = re.findall(
+        r"\b[A-Z]{2,}\b",
+        original_text
     )
 
-    verb_count = sum(
-        1 for _, tag in tagged_tokens
-        if tag.startswith("VB")
+    uppercase_word_count = len(
+        uppercase_words
     )
 
-    adjective_count = sum(
-        1 for _, tag in tagged_tokens
-        if tag.startswith("JJ")
-    )
 
-    # --------------------------------------------------------
+    # ========================================================
+    # SENSATIONAL LANGUAGE
+    # ========================================================
+
+    sensational_words_found = []
+
+    for word in tokens:
+
+        if word in SENSATIONAL_WORDS:
+
+            if word not in sensational_words_found:
+
+                sensational_words_found.append(
+                    word
+                )
+
+
+    # ========================================================
+    # CLICKBAIT ANALYSIS
+    # ========================================================
+
+    clickbait_phrases_found = []
+
+    for phrase in CLICKBAIT_PHRASES:
+
+        if phrase in lowercase_text:
+
+            clickbait_phrases_found.append(
+                phrase
+            )
+
+
+    # ========================================================
+    # POS TAGGING
+    # ========================================================
+
+    noun_count = 0
+
+    verb_count = 0
+
+    adjective_count = 0
+
+
+    try:
+
+        pos_tags = nltk.pos_tag(
+            tokens
+        )
+
+
+        for word, tag in pos_tags:
+
+            if tag.startswith("NN"):
+
+                noun_count += 1
+
+            elif tag.startswith("VB"):
+
+                verb_count += 1
+
+            elif tag.startswith("JJ"):
+
+                adjective_count += 1
+
+    except Exception:
+
+        noun_count = 0
+        verb_count = 0
+        adjective_count = 0
+
+
+    # ========================================================
     # NAMED ENTITY RECOGNITION
-    # --------------------------------------------------------
-
-    tree = ne_chunk(tagged_tokens)
+    # ========================================================
 
     named_entities = []
 
-    for chunk in tree:
 
-        if hasattr(chunk, "label"):
+    try:
 
-            entity_name = " ".join(
-                word
-                for word, tag in chunk.leaves()
-            )
+        pos_tags = nltk.pos_tag(
+            tokens
+        )
 
-            entity_label = chunk.label()
+        chunks = nltk.ne_chunk(
+            pos_tags
+        )
 
-            named_entities.append(
-                (entity_name, entity_label)
-            )
 
-    # --------------------------------------------------------
+        for chunk in chunks:
+
+            if hasattr(
+                chunk,
+                "label"
+            ):
+
+                entity = " ".join(
+                    c[0]
+                    for c in chunk
+                )
+
+                label = chunk.label()
+
+                named_entities.append(
+                    (
+                        entity,
+                        label
+                    )
+                )
+
+    except Exception:
+
+        named_entities = []
+
+
+    # ========================================================
+    # REPEATED WORDS
+    # IMPORTANT:
+    # Stopwords such as the, and, to, of are removed.
+    # ========================================================
+
+    meaningful_tokens = [
+        token
+        for token in tokens
+        if (
+            token not in stop_words
+            and len(token) > 2
+        )
+    ]
+
+
+    word_counts = Counter(
+        meaningful_tokens
+    )
+
+
+    repeated_words = [
+        (
+            word,
+            count
+        )
+
+        for word, count
+        in word_counts.most_common(10)
+
+        if count > 1
+    ]
+
+
+    # ========================================================
     # RETURN ALL FEATURES
-    # --------------------------------------------------------
+    # ========================================================
 
     return {
-        "total_words": total_words,
-        "unique_words": unique_words,
-        "lexical_diversity": lexical_diversity,
 
-        "positive_score": positive_score,
-        "negative_score": negative_score,
-        "neutral_score": neutral_score,
-        "compound_score": compound_score,
-        "sentiment": sentiment,
+        # Text statistics
+        "total_words":
+            total_words,
 
-        "exclamation_count": exclamation_count,
-        "question_count": question_count,
-        "uppercase_word_count": uppercase_word_count,
+        "unique_words":
+            unique_words,
 
-        "sensational_words": sensational_found,
-        "clickbait_phrases": clickbait_found,
-        "repeated_words": repeated_words,
+        "lexical_diversity":
+            lexical_diversity,
 
-        "noun_count": noun_count,
-        "verb_count": verb_count,
-        "adjective_count": adjective_count,
 
-        "named_entities": named_entities
+        # Preprocessing
+        "tokens":
+            tokens,
+
+        "without_stopwords":
+            filtered_tokens,
+
+        "stemmed":
+            stemmed_tokens,
+
+        "lemmatized":
+            lemmatized_tokens,
+
+
+        # Sentiment
+        "sentiment":
+            sentiment,
+
+        "positive_score":
+            positive_score,
+
+        "negative_score":
+            negative_score,
+
+        "neutral_score":
+            neutral_score,
+
+        "compound_score":
+            compound_score,
+
+
+        # Writing style
+        "exclamation_count":
+            exclamation_count,
+
+        "question_count":
+            question_count,
+
+        "uppercase_word_count":
+            uppercase_word_count,
+
+
+        # Sensational language
+        "sensational_words":
+            sensational_words_found,
+
+
+        # Clickbait
+        "clickbait_phrases":
+            clickbait_phrases_found,
+
+
+        # POS
+        "noun_count":
+            noun_count,
+
+        "verb_count":
+            verb_count,
+
+        "adjective_count":
+            adjective_count,
+
+
+        # NER
+        "named_entities":
+            named_entities,
+
+
+        # Repeated words
+        "repeated_words":
+            repeated_words
     }
-
-
-# ============================================================
-# LOCAL TEST
-# ============================================================
-
-if __name__ == "__main__":
-
-    sample_text = """
-    This is a shocking news article!
-    You won't believe what happens next.
-    """
-
-    result = extract_features(sample_text)
-
-    for key, value in result.items():
-        print(f"{key}: {value}")

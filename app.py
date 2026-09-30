@@ -1,8 +1,10 @@
 ﻿import streamlit as st
+import pandas as pd
 
 from src.classifier import classify_news
 from src.features import extract_features
 from src.history import save_prediction, load_history
+from src.web_verification import verify_news
 
 
 # ============================================================
@@ -33,6 +35,7 @@ with st.sidebar:
     - 🧹 Text Preprocessing
     - 🔤 TF-IDF Feature Extraction
     - 🤖 ML Prediction
+    - 🌐 Real-Time Source Verification
     - 😊 Sentiment Analysis
     - 🏷️ POS Analysis
     - 📍 Named Entity Recognition
@@ -49,7 +52,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    st.caption("Machine Learning + NLP")
+    st.caption("Machine Learning + NLP + Real-Time Verification")
 
 
 # ============================================================
@@ -98,11 +101,20 @@ if st.button("🔍 Analyze News", type="primary"):
             classify_news(article_text)
         )
 
+
         # ====================================================
         # NLP FEATURE EXTRACTION
         # ====================================================
 
         features = extract_features(article_text)
+
+
+        # ====================================================
+        # REAL-TIME SOURCE VERIFICATION
+        # ====================================================
+
+        verification = verify_news(article_text)
+
 
         # ====================================================
         # SAVE PREDICTION HISTORY
@@ -115,6 +127,7 @@ if st.button("🔍 Analyze News", type="primary"):
             fake_probability,
             real_probability
         )
+
 
         # ====================================================
         # PREDICTION RESULT
@@ -130,15 +143,18 @@ if st.button("🔍 Analyze News", type="primary"):
 
             st.success("✅ REAL NEWS")
 
+
         st.metric(
             "Confidence",
             f"{confidence * 100:.2f}%"
         )
 
+
         st.info(
             "The trained machine learning model classified this "
             "article based on learned textual patterns."
         )
+
 
         # ====================================================
         # PREDICTION PROBABILITY
@@ -146,24 +162,13 @@ if st.button("🔍 Analyze News", type="primary"):
 
         st.header("📊 Prediction Probability")
 
-        probability_data = {
-            "Probability": [
-                fake_probability * 100,
-                real_probability * 100
-            ]
-        }
-
-        probability_index = [
-            "Fake",
-            "Real"
-        ]
-
         st.bar_chart(
             {
                 "Fake": [fake_probability * 100],
                 "Real": [real_probability * 100]
             }
         )
+
 
         col1, col2 = st.columns(2)
 
@@ -180,6 +185,99 @@ if st.button("🔍 Analyze News", type="primary"):
                 "✅ Real Probability",
                 f"{real_probability * 100:.2f}%"
             )
+
+
+        # ====================================================
+        # REAL-TIME SOURCE VERIFICATION
+        # ====================================================
+
+        st.markdown("---")
+
+        st.header("🌐 Real-Time Source Verification")
+
+        if verification["status"] == "error":
+
+            st.warning(
+                "⚠️ Real-time source verification is currently unavailable."
+            )
+
+            st.caption(
+                verification.get(
+                    "message",
+                    "Unable to retrieve current news sources."
+                )
+            )
+
+
+        elif verification["status"] == "not_found":
+
+            st.info(
+                "🔎 No related current news reports were found."
+            )
+
+            if verification.get("query"):
+
+                st.write(
+                    f"**Search Query:** {verification['query']}"
+                )
+
+
+        elif verification["status"] == "found":
+
+            st.success(
+                f"📰 Found {len(verification['results'])} "
+                f"related news report(s)."
+            )
+
+            st.write(
+                f"**Search Query:** {verification['query']}"
+            )
+
+            st.write(
+                f"**Trusted Sources Found:** "
+                f"{verification['trusted_count']}"
+            )
+
+            st.markdown("---")
+
+            for result in verification["results"]:
+
+                source_label = result["source"]
+
+                if result["trusted"]:
+
+                    source_label += " ✅ Trusted Source"
+
+
+                st.markdown(
+                    f"### 📰 {result['title']}"
+                )
+
+                st.write(
+                    f"**Source:** {source_label}"
+                )
+
+                if result["published"]:
+
+                    st.write(
+                        f"**Published:** {result['published']}"
+                    )
+
+                if result["link"]:
+
+                    st.markdown(
+                        f"[🔗 Read Source]({result['link']})"
+                    )
+
+                st.markdown("---")
+
+
+            st.info(
+                "ℹ️ Source verification provides supporting evidence "
+                "from current news reports. It does not automatically "
+                "change the ML model's FAKE/REAL prediction."
+            )
+
 
         # ====================================================
         # TEXT STATISTICS
@@ -210,6 +308,7 @@ if st.button("🔍 Analyze News", type="primary"):
                 f"{features['lexical_diversity']:.3f}"
             )
 
+
         # ====================================================
         # SENTIMENT ANALYSIS
         # ====================================================
@@ -220,6 +319,7 @@ if st.button("🔍 Analyze News", type="primary"):
             f"**Overall Sentiment:** "
             f"{features['sentiment']}"
         )
+
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -251,6 +351,7 @@ if st.button("🔍 Analyze News", type="primary"):
                 f"{features['compound_score']:.3f}"
             )
 
+
         # ====================================================
         # WRITING STYLE
         # ====================================================
@@ -280,6 +381,7 @@ if st.button("🔍 Analyze News", type="primary"):
                 features["uppercase_word_count"]
             )
 
+
         # ====================================================
         # SENSATIONAL LANGUAGE
         # ====================================================
@@ -304,6 +406,7 @@ if st.button("🔍 Analyze News", type="primary"):
                 "No predefined sensational words detected."
             )
 
+
         # ====================================================
         # CLICKBAIT ANALYSIS
         # ====================================================
@@ -327,6 +430,7 @@ if st.button("🔍 Analyze News", type="primary"):
             st.success(
                 "No predefined clickbait phrases detected."
             )
+
 
         # ====================================================
         # POS ANALYSIS
@@ -357,6 +461,7 @@ if st.button("🔍 Analyze News", type="primary"):
                 features["adjective_count"]
             )
 
+
         # ====================================================
         # NAMED ENTITY RECOGNITION
         # ====================================================
@@ -376,6 +481,7 @@ if st.button("🔍 Analyze News", type="primary"):
             st.write(
                 "No named entities detected."
             )
+
 
         # ====================================================
         # REPEATED WORDS
@@ -428,7 +534,7 @@ with col3:
 
     st.info(
         "**Approach**\n\n"
-        "Machine Learning + NLP"
+        "Machine Learning + NLP + Real-Time Verification"
     )
 
 
@@ -458,6 +564,7 @@ if history:
         if item["Prediction"] == "REAL"
     )
 
+
     # --------------------------------------------------------
     # HISTORY SUMMARY
     # --------------------------------------------------------
@@ -484,6 +591,7 @@ if history:
             "Real",
             real_count
         )
+
 
     # --------------------------------------------------------
     # HISTORY ENTRIES
@@ -528,5 +636,6 @@ st.markdown("---")
 
 st.caption(
     "📰 Fake News Detection System | "
-    "Machine Learning + Natural Language Processing"
+    "Machine Learning + Natural Language Processing + "
+    "Real-Time Source Verification"
 )
