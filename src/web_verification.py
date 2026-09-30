@@ -4,10 +4,11 @@
 #
 # Purpose:
 #   1. Search current news sources
-#   2. Extract evidence from trusted sources
-#   3. Check whether the evidence actually supports
-#      or contradicts the submitted claim
-#   4. Never treat simple keyword overlap as proof
+#   2. Fetch the ACTUAL publisher article
+#   3. Extract article text
+#   4. Find claim-relevant evidence sentences
+#   5. Check whether evidence supports or contradicts claim
+#   6. Do NOT use simple keyword overlap as proof
 #
 # Final statuses:
 #   REAL / VERIFIED
@@ -18,8 +19,11 @@
 import re
 import urllib.parse
 import urllib.request
+import urllib.error
 import xml.etree.ElementTree as ET
+
 from html import unescape
+from html.parser import HTMLParser
 
 from nltk.corpus import stopwords
 
@@ -32,16 +36,25 @@ TRUSTED_DOMAINS = {
     "reuters.com": "Reuters",
     "apnews.com": "Associated Press",
     "bbc.com": "BBC",
+    "bbc.co.uk": "BBC",
     "thehindu.com": "The Hindu",
     "indianexpress.com": "Indian Express",
     "timesofindia.indiatimes.com": "Times of India",
     "ndtv.com": "NDTV",
     "hindustantimes.com": "Hindustan Times",
     "npr.org": "NPR",
-    "gov.in": "Government of India",
     "pib.gov.in": "Press Information Bureau",
+    "gov.in": "Government of India",
     "who.int": "World Health Organization",
     "un.org": "United Nations",
+    "google.com": "Google",
+    "blog.google": "Google",
+    "alphabet.com": "Alphabet",
+    "tesla.com": "Tesla",
+    "sec.gov": "U.S. SEC",
+    "cia.gov": "CIA",
+    "go.kr": "Government of South Korea",
+    "opm.go.kr": "Office for Government Policy Coordination",
 }
 
 
@@ -62,7 +75,24 @@ TRUSTED_PUBLISHERS = {
     "npr",
     "press information bureau",
     "pib",
+    "google",
+    "alphabet",
+    "tesla",
 }
+
+
+# ============================================================
+# HTTP SETTINGS
+# ============================================================
+
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 "
+    "(KHTML, like Gecko) "
+    "Chrome/154.0 Safari/537.36"
+)
+
+ARTICLE_TIMEOUT = 10
 
 
 # ============================================================
@@ -70,8 +100,14 @@ TRUSTED_PUBLISHERS = {
 # ============================================================
 
 ROLE_PATTERNS = [
-    r"\b(.+?)\s+is\s+(?:the\s+)?(president|prime minister|pm|ceo|chief executive officer|governor|mayor|chancellor)\s+of\s+(.+)",
-    r"\b(.+?)\s+is\s+(?:the\s+)?(president|prime minister|pm|ceo|chief executive officer|governor|mayor|chancellor)\s+(.+)",
+
+    r"\b(.+?)\s+is\s+(?:the\s+)?"
+    r"(president|prime minister|pm|ceo|chief executive officer|"
+    r"governor|mayor|chancellor)\s+of\s+(.+)",
+
+    r"\b(.+?)\s+is\s+(?:the\s+)?"
+    r"(president|prime minister|pm|ceo|chief executive officer|"
+    r"governor|mayor|chancellor)\s+(.+)",
 ]
 
 
@@ -80,6 +116,7 @@ ROLE_PATTERNS = [
 # ============================================================
 
 def _normalize_text(text):
+
     if not text:
         return ""
 
@@ -115,11 +152,13 @@ def _normalize_text(text):
 def _get_stopwords():
 
     try:
+
         return set(
             stopwords.words("english")
         )
 
     except Exception:
+
         return {
             "the",
             "is",
@@ -140,6 +179,12 @@ def _get_stopwords():
             "at",
             "by",
             "with",
+            "has",
+            "have",
+            "had",
+            "this",
+            "that",
+            "from",
         }
 
 
@@ -147,7 +192,10 @@ def _get_stopwords():
 # CLEAN SEARCH QUERY
 # ============================================================
 
-def _clean_query(text, max_words=12):
+def _clean_query(
+    text,
+    max_words=12
+):
 
     stop_words = _get_stopwords()
 
@@ -173,7 +221,10 @@ def _clean_query(text, max_words=12):
     for word in words:
 
         if word not in unique_words:
-            unique_words.append(word)
+
+            unique_words.append(
+                word
+            )
 
     return " ".join(
         unique_words[:max_words]
@@ -181,7 +232,7 @@ def _clean_query(text, max_words=12):
 
 
 # ============================================================
-# EXTRACT SIMPLE CLAIM
+# EXTRACT SIMPLE ROLE CLAIM
 #
 # Example:
 #
@@ -189,7 +240,7 @@ def _clean_query(text, max_words=12):
 #
 # subject = Narendra Modi
 # role    = PM
-# object  = Korea
+# target  = Korea
 # ============================================================
 
 def _extract_role_claim(text):
@@ -210,9 +261,22 @@ def _extract_role_claim(text):
 
         if match:
 
-            subject = match.group(1).strip()
-            role = match.group(2).strip()
-            target = match.group(3).strip()
+            subject = (
+                match.group(1)
+                .strip()
+                .strip(".")
+            )
+
+            role = (
+                match.group(2)
+                .strip()
+            )
+
+            target = (
+                match.group(3)
+                .strip()
+                .strip(".")
+            )
 
             return {
                 "type": "role_claim",
@@ -230,17 +294,37 @@ def _extract_role_claim(text):
 
 def _normalize_role(role):
 
-    role = role.lower().strip()
+    role = (
+        role
+        .lower()
+        .strip()
+    )
 
     mapping = {
-        "pm": "prime minister",
-        "prime minister": "prime minister",
-        "president": "president",
-        "ceo": "ceo",
-        "chief executive officer": "ceo",
-        "governor": "governor",
-        "mayor": "mayor",
-        "chancellor": "chancellor",
+
+        "pm":
+            "prime minister",
+
+        "prime minister":
+            "prime minister",
+
+        "president":
+            "president",
+
+        "ceo":
+            "ceo",
+
+        "chief executive officer":
+            "ceo",
+
+        "governor":
+            "governor",
+
+        "mayor":
+            "mayor",
+
+        "chancellor":
+            "chancellor",
     }
 
     return mapping.get(
@@ -261,7 +345,10 @@ def _source_name(url):
             url
         )
 
-        hostname = parsed.netloc.lower()
+        hostname = (
+            parsed.netloc
+            .lower()
+        )
 
         hostname = hostname.replace(
             "www.",
@@ -276,17 +363,21 @@ def _source_name(url):
                     "." + domain
                 )
             ):
+
                 return name, True
 
         return hostname, False
 
     except Exception:
 
-        return "Unknown Source", False
+        return (
+            "Unknown Source",
+            False
+        )
 
 
 # ============================================================
-# EXTRACT PUBLISHER
+# EXTRACT PUBLISHER FROM GOOGLE NEWS TITLE
 # ============================================================
 
 def _extract_publisher(title):
@@ -301,9 +392,13 @@ def _extract_publisher(title):
 
     if len(parts) == 2:
 
-        publisher = parts[1].strip()
+        publisher = (
+            parts[1]
+            .strip()
+        )
 
         if publisher:
+
             return publisher
 
     return None
@@ -313,9 +408,12 @@ def _extract_publisher(title):
 # TRUSTED PUBLISHER CHECK
 # ============================================================
 
-def _is_trusted_publisher(publisher):
+def _is_trusted_publisher(
+    publisher
+):
 
     if not publisher:
+
         return False
 
     publisher_lower = (
@@ -339,21 +437,28 @@ def _is_trusted_publisher(publisher):
     for trusted_name in TRUSTED_PUBLISHERS:
 
         if trusted_name in publisher_lower:
+
             return True
 
     return False
 
 
 # ============================================================
-# CLEAN PUBLISHER
+# CLEAN PUBLISHER NAME
 # ============================================================
 
-def _clean_publisher_name(publisher):
+def _clean_publisher_name(
+    publisher
+):
 
     if not publisher:
+
         return "Unknown Source"
 
-    publisher = publisher.strip()
+    publisher = (
+        publisher
+        .strip()
+    )
 
     publisher = re.sub(
         r"\s+",
@@ -365,13 +470,1063 @@ def _clean_publisher_name(publisher):
 
 
 # ============================================================
-# FETCH GOOGLE NEWS RSS
+# HTML TEXT EXTRACTOR
 # ============================================================
 
-def _search_news(query, max_results=8):
+class _ArticleTextParser(
+    HTMLParser
+):
 
-    encoded_query = urllib.parse.quote_plus(
-        query
+    def __init__(self):
+
+        super().__init__()
+
+        self.parts = []
+
+        self.skip_depth = 0
+
+        self.skip_tags = {
+            "script",
+            "style",
+            "noscript",
+            "svg",
+            "iframe",
+            "nav",
+            "footer",
+            "header",
+            "form",
+        }
+
+    def handle_starttag(
+        self,
+        tag,
+        attrs
+    ):
+
+        tag = tag.lower()
+
+        if tag in self.skip_tags:
+
+            self.skip_depth += 1
+
+    def handle_endtag(
+        self,
+        tag
+    ):
+
+        tag = tag.lower()
+
+        if (
+            tag in self.skip_tags
+            and self.skip_depth > 0
+        ):
+
+            self.skip_depth -= 1
+
+    def handle_data(
+        self,
+        data
+    ):
+
+        if self.skip_depth > 0:
+
+            return
+
+        text = data.strip()
+
+        if text:
+
+            self.parts.append(
+                text
+            )
+
+    def get_text(self):
+
+        return " ".join(
+            self.parts
+        )
+
+
+# ============================================================
+# FETCH ACTUAL ARTICLE PAGE
+#
+# IMPORTANT:
+# Google News RSS is used only to DISCOVER articles.
+# The actual publisher page is fetched separately.
+# ============================================================
+
+def _fetch_article(
+    url,
+    max_chars=120000
+):
+
+    if not url:
+
+        return {
+            "success": False,
+            "url": url,
+            "final_url": url,
+            "title": "",
+            "description": "",
+            "text": "",
+            "error": "Empty URL"
+        }
+
+    try:
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept":
+                    "text/html,"
+                    "application/xhtml+xml"
+            }
+        )
+
+        with urllib.request.urlopen(
+            request,
+            timeout=ARTICLE_TIMEOUT
+        ) as response:
+
+            final_url = response.geturl()
+
+            content_type = (
+                response.headers
+                .get(
+                    "Content-Type",
+                    ""
+                )
+                .lower()
+            )
+
+            raw = response.read(
+                2_000_000
+            )
+
+        if (
+            "html" not in content_type
+            and not raw.lstrip().startswith(
+                b"<"
+            )
+        ):
+
+            return {
+                "success": False,
+                "url": url,
+                "final_url": final_url,
+                "title": "",
+                "description": "",
+                "text": "",
+                "error":
+                    "Publisher did not return HTML."
+            }
+
+        encoding = "utf-8"
+
+        try:
+
+            html = raw.decode(
+                encoding,
+                errors="ignore"
+            )
+
+        except Exception:
+
+            html = str(raw)
+
+        # ----------------------------------------------------
+        # TITLE
+        # ----------------------------------------------------
+
+        title_match = re.search(
+            r"<title[^>]*>(.*?)</title>",
+            html,
+            flags=re.IGNORECASE | re.DOTALL
+        )
+
+        title = ""
+
+        if title_match:
+
+            title = re.sub(
+                r"\s+",
+                " ",
+                unescape(
+                    title_match.group(1)
+                )
+            ).strip()
+
+        # ----------------------------------------------------
+        # META DESCRIPTION
+        # ----------------------------------------------------
+
+        description = ""
+
+        meta_patterns = [
+
+            r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']',
+
+            r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']',
+
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
+
+            r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
+        ]
+
+        for pattern in meta_patterns:
+
+            match = re.search(
+                pattern,
+                html,
+                flags=re.IGNORECASE | re.DOTALL
+            )
+
+            if match:
+
+                description = re.sub(
+                    r"\s+",
+                    " ",
+                    unescape(
+                        match.group(1)
+                    )
+                ).strip()
+
+                if description:
+
+                    break
+
+        # ----------------------------------------------------
+        # ARTICLE BODY
+        # ----------------------------------------------------
+
+        parser = _ArticleTextParser()
+
+        parser.feed(
+            html
+        )
+
+        article_text = parser.get_text()
+
+        article_text = re.sub(
+            r"\s+",
+            " ",
+            article_text
+        ).strip()
+
+        if len(article_text) > max_chars:
+
+            article_text = (
+                article_text[:max_chars]
+            )
+
+        return {
+
+            "success": bool(
+                article_text
+            ),
+
+            "url": url,
+
+            "final_url": final_url,
+
+            "title": title,
+
+            "description": description,
+
+            "text": article_text,
+
+            "error": ""
+        }
+
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        ValueError,
+        Exception
+    ) as e:
+
+        return {
+
+            "success": False,
+
+            "url": url,
+
+            "final_url": url,
+
+            "title": "",
+
+            "description": "",
+
+            "text": "",
+
+            "error": str(e)
+        }
+
+
+# ============================================================
+# SENTENCE SPLITTING
+# ============================================================
+
+def _split_sentences(
+    text
+):
+
+    if not text:
+
+        return []
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    sentences = re.split(
+        r"(?<=[.!?])\s+",
+        text
+    )
+
+    cleaned = []
+
+    for sentence in sentences:
+
+        sentence = sentence.strip()
+
+        if len(sentence) < 20:
+
+            continue
+
+        cleaned.append(
+            sentence
+        )
+
+    return cleaned
+
+
+# ============================================================
+# SOURCE TEXT
+# ============================================================
+
+def _source_text(
+    result
+):
+
+    article_text = result.get(
+        "article_text",
+        ""
+    )
+
+    if article_text:
+
+        return _normalize_text(
+            article_text
+        )
+
+    return _normalize_text(
+        (
+            result.get(
+                "title",
+                ""
+            )
+            + " "
+            + result.get(
+                "description",
+                ""
+            )
+        )
+    )
+
+
+# ============================================================
+# ENTITY MATCH
+# ============================================================
+
+def _entity_in_source(
+    entity,
+    source_text
+):
+
+    entity_normalized = (
+        _normalize_text(
+            entity
+        )
+    )
+
+    if not entity_normalized:
+
+        return False
+
+    # Exact phrase first.
+    if entity_normalized in source_text:
+
+        return True
+
+    entity_words = [
+        word
+        for word in entity_normalized.split()
+        if len(word) >= 2
+    ]
+
+    if not entity_words:
+
+        return False
+
+    return all(
+        word in source_text
+        for word in entity_words
+    )
+
+
+# ============================================================
+# ROLE MATCH
+# ============================================================
+
+def _role_in_source(
+    role,
+    source_text
+):
+
+    role = _normalize_role(
+        role
+    )
+
+    padded = (
+        " "
+        + source_text
+        + " "
+    )
+
+    if role == "prime minister":
+
+        return (
+            " prime minister "
+            in padded
+            or " pm "
+            in padded
+        )
+
+    if role == "ceo":
+
+        return (
+            " ceo "
+            in padded
+            or
+            " chief executive officer "
+            in padded
+        )
+
+    return (
+        " "
+        + role
+        + " "
+    ) in padded
+
+
+# ============================================================
+# TARGET MATCH
+# ============================================================
+
+def _target_in_source(
+    target,
+    source_text
+):
+
+    target_normalized = (
+        _normalize_text(
+            target
+        )
+    )
+
+    if not target_normalized:
+
+        return False
+
+    if target_normalized in source_text:
+
+        return True
+
+    target_words = [
+        word
+        for word in target_normalized.split()
+        if len(word) >= 3
+    ]
+
+    if not target_words:
+
+        return False
+
+    return all(
+        word in source_text
+        for word in target_words
+    )
+
+
+# ============================================================
+# CLAIM-RELEVANT SENTENCES
+# ============================================================
+
+def _find_relevant_sentences(
+    claim,
+    article_text,
+    max_sentences=5
+):
+
+    if not article_text:
+
+        return []
+
+    sentences = _split_sentences(
+        article_text
+    )
+
+    relevant = []
+
+    subject = _normalize_text(
+        claim["subject"]
+    )
+
+    role = _normalize_role(
+        claim["role"]
+    )
+
+    target = _normalize_text(
+        claim["target"]
+    )
+
+    for sentence in sentences:
+
+        normalized = _normalize_text(
+            sentence
+        )
+
+        subject_match = (
+            subject in normalized
+        )
+
+        role_match = _role_in_source(
+            role,
+            normalized
+        )
+
+        target_match = (
+            target in normalized
+            or _target_in_source(
+                target,
+                normalized
+            )
+        )
+
+        score = 0
+
+        if subject_match:
+            score += 3
+
+        if role_match:
+            score += 2
+
+        if target_match:
+            score += 2
+
+        if (
+            subject_match
+            and role_match
+        ):
+
+            score += 2
+
+        if (
+            role_match
+            and target_match
+        ):
+
+            score += 2
+
+        if score >= 5:
+
+            relevant.append(
+                (
+                    score,
+                    sentence
+                )
+            )
+
+    relevant.sort(
+        key=lambda item: item[0],
+        reverse=True
+    )
+
+    return [
+        sentence
+        for score, sentence
+        in relevant[:max_sentences]
+    ]
+
+
+# ============================================================
+# EXPLICIT SUPPORT CHECK
+#
+# This checks the ACTUAL ARTICLE TEXT.
+# ============================================================
+
+def _strong_role_support(
+    claim,
+    result
+):
+
+    article_text = result.get(
+        "article_text",
+        ""
+    )
+
+    if not article_text:
+
+        return False
+
+    normalized = _normalize_text(
+        article_text
+    )
+
+    subject = _normalize_text(
+        claim["subject"]
+    )
+
+    target = _normalize_text(
+        claim["target"]
+    )
+
+    role = _normalize_role(
+        claim["role"]
+    )
+
+    if not subject:
+        return False
+
+    if not target:
+        return False
+
+    if not _entity_in_source(
+        subject,
+        normalized
+    ):
+
+        return False
+
+    if not _role_in_source(
+        role,
+        normalized
+    ):
+
+        return False
+
+    if not _target_in_source(
+        target,
+        normalized
+    ):
+
+        return False
+
+    relevant_sentences = (
+        _find_relevant_sentences(
+            claim,
+            article_text
+        )
+    )
+
+    if not relevant_sentences:
+
+        return False
+
+    subject_pattern = re.escape(
+        subject
+    )
+
+    target_pattern = re.escape(
+        target
+    )
+
+    if role == "prime minister":
+
+        role_pattern = (
+            r"(?:prime minister|pm)"
+        )
+
+    elif role == "ceo":
+
+        role_pattern = (
+            r"(?:ceo|chief executive officer)"
+        )
+
+    else:
+
+        role_pattern = re.escape(
+            role
+        )
+
+    patterns = [
+
+        rf"{subject_pattern}.{{0,250}}"
+        rf"{role_pattern}.{{0,250}}"
+        rf"{target_pattern}",
+
+        rf"{subject_pattern}.{{0,250}}"
+        rf"{target_pattern}.{{0,250}}"
+        rf"{role_pattern}",
+
+        rf"{role_pattern}.{{0,250}}"
+        rf"{subject_pattern}.{{0,250}}"
+        rf"{target_pattern}",
+
+        rf"{target_pattern}.{{0,250}}"
+        rf"{role_pattern}.{{0,250}}"
+        rf"{subject_pattern}",
+    ]
+
+    for sentence in relevant_sentences:
+
+        normalized_sentence = (
+            _normalize_text(
+                sentence
+            )
+        )
+
+        for pattern in patterns:
+
+            if re.search(
+                pattern,
+                normalized_sentence,
+                flags=re.IGNORECASE
+            ):
+
+                return True
+
+    return False
+
+
+# ============================================================
+# DIFFERENT ROLE HOLDER DETECTION
+#
+# Example:
+#
+# Claim:
+#   X is PM of Y
+#
+# Evidence:
+#   Z is the Prime Minister of Y
+#
+# This is stronger contradiction evidence than
+# simply saying "X was not found".
+# ============================================================
+
+def _extract_role_holders(
+    claim,
+    article_text
+):
+
+    if not article_text:
+
+        return []
+
+    sentences = _split_sentences(
+        article_text
+    )
+
+    role = _normalize_role(
+        claim["role"]
+    )
+
+    target = _normalize_text(
+        claim["target"]
+    )
+
+    holders = []
+
+    if role == "prime minister":
+
+        role_regex = (
+            r"([A-Z][A-Za-z.\-']"
+            r"(?:\s+[A-Z][A-Za-z.\-']+){0,5})"
+            r"\s+(?:is|was|serves as|served as|"
+            r"became|becomes)\s+"
+            r"(?:the\s+)?"
+            r"(?:Prime Minister|PM)"
+            r"\s+(?:of|for)\s+"
+            r"([A-Za-z][A-Za-z .\-']+)"
+        )
+
+    elif role == "ceo":
+
+        role_regex = (
+            r"([A-Z][A-Za-z.\-']"
+            r"(?:\s+[A-Z][A-Za-z.\-']+){0,5})"
+            r"\s+(?:is|was|serves as|served as|"
+            r"became|becomes)\s+"
+            r"(?:the\s+)?"
+            r"(?:CEO|Chief Executive Officer)"
+            r"\s+(?:of|for)\s+"
+            r"([A-Za-z][A-Za-z .\-']+)"
+        )
+
+    else:
+
+        role_regex = (
+            r"([A-Z][A-Za-z.\-']"
+            r"(?:\s+[A-Z][A-Za-z.\-']+){0,5})"
+            r"\s+(?:is|was|serves as|served as|"
+            r"became|becomes)\s+"
+            r"(?:the\s+)?"
+            + re.escape(role)
+            + r"\s+(?:of|for)\s+"
+            r"([A-Za-z][A-Za-z .\-']+)"
+        )
+
+    for sentence in sentences:
+
+        match = re.search(
+            role_regex,
+            sentence,
+            flags=re.IGNORECASE
+        )
+
+        if not match:
+
+            continue
+
+        person = (
+            match.group(1)
+            .strip()
+        )
+
+        matched_target = (
+            match.group(2)
+            .strip()
+        )
+
+        normalized_target = (
+            _normalize_text(
+                matched_target
+            )
+        )
+
+        if (
+            target in normalized_target
+            or normalized_target in target
+        ):
+
+            holders.append(
+                {
+                    "person": person,
+                    "sentence": sentence
+                }
+            )
+
+    return holders
+
+
+# ============================================================
+# FIND SUPPORTING SOURCES
+# ============================================================
+
+def _find_supporting_sources(
+    claim,
+    results
+):
+
+    supporting = []
+
+    for result in results:
+
+        if not result.get(
+            "trusted",
+            False
+        ):
+
+            continue
+
+        if not result.get(
+            "article_fetched",
+            False
+        ):
+
+            continue
+
+        if _strong_role_support(
+            claim,
+            result
+        ):
+
+            supporting.append(
+                result
+            )
+
+    return supporting
+
+
+# ============================================================
+# FIND CONTRADICTORY SOURCES
+# ============================================================
+
+def _find_contradictory_sources(
+    claim,
+    target_results
+):
+
+    contradictions = []
+
+    claimed_subject = _normalize_text(
+        claim["subject"]
+    )
+
+    for result in target_results:
+
+        if not result.get(
+            "trusted",
+            False
+        ):
+
+            continue
+
+        if not result.get(
+            "article_fetched",
+            False
+        ):
+
+            continue
+
+        article_text = result.get(
+            "article_text",
+            ""
+        )
+
+        if not article_text:
+
+            continue
+
+        holders = _extract_role_holders(
+            claim,
+            article_text
+        )
+
+        different_holders = []
+
+        for holder in holders:
+
+            holder_name = _normalize_text(
+                holder["person"]
+            )
+
+            if not holder_name:
+
+                continue
+
+            if (
+                holder_name
+                != claimed_subject
+                and claimed_subject
+                not in holder_name
+            ):
+
+                different_holders.append(
+                    holder
+                )
+
+        if different_holders:
+
+            result_copy = dict(
+                result
+            )
+
+            result_copy[
+                "identified_role_holders"
+            ] = different_holders
+
+            contradictions.append(
+                result_copy
+            )
+
+    return contradictions
+
+
+# ============================================================
+# FETCH ARTICLE EVIDENCE
+# ============================================================
+
+def _attach_article_evidence(
+    results
+):
+
+    enriched = []
+
+    for result in results:
+
+        item = dict(
+            result
+        )
+
+        article = _fetch_article(
+            result.get(
+                "link",
+                ""
+            )
+        )
+
+        item[
+            "article_fetched"
+        ] = article[
+            "success"
+        ]
+
+        item[
+            "article_url"
+        ] = article[
+            "final_url"
+        ]
+
+        item[
+            "article_title"
+        ] = article[
+            "title"
+        ]
+
+        item[
+            "article_description"
+        ] = article[
+            "description"
+        ]
+
+        item[
+            "article_text"
+        ] = article[
+            "text"
+        ]
+
+        item[
+            "article_error"
+        ] = article[
+            "error"
+        ]
+
+        enriched.append(
+            item
+        )
+
+    return enriched
+
+
+# ============================================================
+# SEARCH GOOGLE NEWS RSS
+# ============================================================
+
+def _search_news(
+    query,
+    max_results=8
+):
+
+    encoded_query = (
+        urllib.parse.quote_plus(
+            query
+        )
     )
 
     rss_url = (
@@ -385,7 +1540,7 @@ def _search_news(query, max_results=8):
     request = urllib.request.Request(
         rss_url,
         headers={
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": USER_AGENT
         }
     )
 
@@ -396,7 +1551,9 @@ def _search_news(query, max_results=8):
 
         data = response.read()
 
-    root = ET.fromstring(data)
+    root = ET.fromstring(
+        data
+    )
 
     results = []
 
@@ -430,8 +1587,10 @@ def _search_news(query, max_results=8):
             else ""
         )
 
-        description_element = item.find(
-            "description"
+        description_element = (
+            item.find(
+                "description"
+            )
         )
 
         description = (
@@ -443,8 +1602,10 @@ def _search_news(query, max_results=8):
             else ""
         )
 
-        pub_date_element = item.find(
-            "pubDate"
+        pub_date_element = (
+            item.find(
+                "pubDate"
+            )
         )
 
         published = (
@@ -477,7 +1638,9 @@ def _search_news(query, max_results=8):
         else:
 
             source_name, trusted = (
-                _source_name(link)
+                _source_name(
+                    link
+                )
             )
 
         results.append({
@@ -492,281 +1655,23 @@ def _search_news(query, max_results=8):
 
             "trusted": trusted,
 
-            "published": published
+            "published": published,
+
+            "article_fetched": False,
+
+            "article_url": "",
+
+            "article_title": "",
+
+            "article_description": "",
+
+            "article_text": "",
+
+            "article_error": "",
+
         })
 
     return results
-
-
-# ============================================================
-# NORMALIZED SOURCE TEXT
-# ============================================================
-
-def _source_text(result):
-
-    return _normalize_text(
-        (
-            result.get("title", "")
-            + " "
-            + result.get("description", "")
-        )
-    )
-
-
-# ============================================================
-# ENTITY MATCH
-# ============================================================
-
-def _entity_in_source(entity, source_text):
-
-    entity_words = [
-        word
-        for word in _normalize_text(
-            entity
-        ).split()
-        if len(word) >= 2
-    ]
-
-    if not entity_words:
-        return False
-
-    return all(
-        word in source_text
-        for word in entity_words
-    )
-
-
-# ============================================================
-# ROLE MATCH
-# ============================================================
-
-def _role_in_source(role, source_text):
-
-    role = _normalize_role(role)
-
-    if role == "prime minister":
-
-        return (
-            "prime minister" in source_text
-            or " pm " in f" {source_text} "
-        )
-
-    if role == "ceo":
-
-        return (
-            "ceo" in source_text
-            or "chief executive officer"
-            in source_text
-        )
-
-    return role in source_text
-
-
-# ============================================================
-# TARGET MATCH
-# ============================================================
-
-def _target_in_source(target, source_text):
-
-    target_normalized = _normalize_text(
-        target
-    )
-
-    if not target_normalized:
-        return False
-
-    target_words = [
-        word
-        for word in target_normalized.split()
-        if len(word) >= 3
-    ]
-
-    return all(
-        word in source_text
-        for word in target_words
-    )
-
-
-# ============================================================
-# STRONG CLAIM SUPPORT CHECK
-#
-# IMPORTANT:
-# Mere word overlap is NOT support.
-# ============================================================
-
-def _strong_role_support(
-    claim,
-    result
-):
-
-    source_text = _source_text(
-        result
-    )
-
-    subject_match = _entity_in_source(
-        claim["subject"],
-        source_text
-    )
-
-    role_match = _role_in_source(
-        claim["role"],
-        source_text
-    )
-
-    target_match = _target_in_source(
-        claim["target"],
-        source_text
-    )
-
-    if not (
-        subject_match
-        and role_match
-        and target_match
-    ):
-        return False
-
-    # Strong patterns where subject is explicitly
-    # connected with the role.
-    subject = re.escape(
-        _normalize_text(
-            claim["subject"]
-        )
-    )
-
-    target = re.escape(
-        _normalize_text(
-            claim["target"]
-        )
-    )
-
-    role = _normalize_role(
-        claim["role"]
-    )
-
-    patterns = [
-
-        rf"{subject}.*{role}.*{target}",
-
-        rf"{subject}.*{target}.*{role}",
-
-        rf"{role}.*{subject}.*{target}",
-
-        rf"{target}.*{role}.*{subject}",
-    ]
-
-    for pattern in patterns:
-
-        if re.search(
-            pattern,
-            source_text
-        ):
-
-            return True
-
-    return False
-
-
-# ============================================================
-# FIND SOURCES THAT SUPPORT CLAIM
-# ============================================================
-
-def _find_supporting_sources(
-    claim,
-    results
-):
-
-    supporting = []
-
-    for result in results:
-
-        if not result["trusted"]:
-            continue
-
-        if _strong_role_support(
-            claim,
-            result
-        ):
-
-            supporting.append(
-                result
-            )
-
-    return supporting
-
-
-# ============================================================
-# FIND CONTRADICTORY SOURCES
-#
-# For a role claim:
-#
-# "X is PM of Y"
-#
-# We search:
-#
-# "Y prime minister"
-#
-# If trusted sources clearly identify another
-# person as the role holder, the submitted
-# claim can be treated as contradicted.
-# ============================================================
-
-def _find_contradictory_sources(
-    claim,
-    target_results
-):
-
-    contradictions = []
-
-    subject_normalized = _normalize_text(
-        claim["subject"]
-    )
-
-    role_normalized = _normalize_role(
-        claim["role"]
-    )
-
-    for result in target_results:
-
-        if not result["trusted"]:
-            continue
-
-        text = _source_text(
-            result
-        )
-
-        if not _role_in_source(
-            role_normalized,
-            text
-        ):
-            continue
-
-        # If the source discusses the target + role
-        # but does NOT contain the claimed subject,
-        # it may identify the actual office holder.
-        #
-        # We require explicit role wording and target
-        # presence to avoid simple keyword mistakes.
-
-        target_present = _target_in_source(
-            claim["target"],
-            text
-        )
-
-        subject_present = (
-            subject_normalized
-            and subject_normalized in text
-        )
-
-        if (
-            target_present
-            and not subject_present
-        ):
-
-            contradictions.append(
-                result
-            )
-
-    return contradictions
 
 
 # ============================================================
@@ -782,15 +1687,18 @@ def _assess_claim(
     if not claim:
 
         return {
-            "status": "UNVERIFIED",
 
-            "label": "🟡 UNVERIFIED",
+            "status":
+                "UNVERIFIED",
+
+            "label":
+                "🟡 UNVERIFIED",
 
             "reason":
                 "The submitted text does not contain "
-                "a claim structure that can be "
-                "reliably checked with the current "
-                "rule-based verifier.",
+                "a supported role-based claim structure. "
+                "The current verifier therefore cannot "
+                "make a reliable factual determination.",
 
             "supporting_sources": [],
 
@@ -798,9 +1706,11 @@ def _assess_claim(
         }
 
 
-    supporting = _find_supporting_sources(
-        claim,
-        exact_results
+    supporting = (
+        _find_supporting_sources(
+            claim,
+            exact_results
+        )
     )
 
     contradictions = (
@@ -811,23 +1721,26 @@ def _assess_claim(
     )
 
 
-    # --------------------------------------------------------
-    # STRONG SUPPORT
-    # --------------------------------------------------------
+    # ========================================================
+    # REAL / VERIFIED
+    # ========================================================
 
     if supporting:
 
         return {
 
-            "status": "REAL",
+            "status":
+                "REAL",
 
-            "label": "🟢 REAL / VERIFIED",
+            "label":
+                "🟢 REAL / VERIFIED",
 
             "reason":
-                "A trusted current source explicitly "
-                "connects the claimed person/entity "
-                "with the stated role and target. "
-                "The claim is supported by evidence.",
+                "A trusted publisher article was "
+                "retrieved and its article text contains "
+                "claim-relevant evidence connecting the "
+                "claimed subject with the stated role "
+                "and target.",
 
             "supporting_sources":
                 supporting,
@@ -837,25 +1750,25 @@ def _assess_claim(
         }
 
 
-    # --------------------------------------------------------
-    # STRONG CONTRADICTION
-    # --------------------------------------------------------
+    # ========================================================
+    # FAKE / CONTRADICTED
+    # ========================================================
 
     if contradictions:
 
         return {
 
-            "status": "FAKE",
+            "status":
+                "FAKE",
 
             "label":
                 "🔴 FAKE / CONTRADICTED",
 
             "reason":
-                "Trusted current sources discuss "
-                "the stated role and target but do "
-                "not identify the claimed subject as "
-                "the role holder. This provides "
-                "contradictory evidence.",
+                "A trusted publisher article was "
+                "retrieved and explicitly identifies "
+                "a different person as the stated role "
+                "holder for the claimed target.",
 
             "supporting_sources":
                 supporting,
@@ -865,21 +1778,24 @@ def _assess_claim(
         }
 
 
-    # --------------------------------------------------------
-    # NO STRONG EVIDENCE
-    # --------------------------------------------------------
+    # ========================================================
+    # UNVERIFIED
+    # ========================================================
 
     return {
 
-        "status": "UNVERIFIED",
+        "status":
+            "UNVERIFIED",
 
-        "label": "🟡 UNVERIFIED",
+        "label":
+            "🟡 UNVERIFIED",
 
         "reason":
-            "Current sources were found, but they "
-            "do not provide strong claim-level "
-            "evidence supporting or contradicting "
-            "the submitted statement.",
+            "Current sources were found, but the "
+            "retrieved trusted article text did not "
+            "provide sufficiently explicit evidence "
+            "to support or contradict the submitted "
+            "claim.",
 
         "supporting_sources":
             supporting,
@@ -902,13 +1818,17 @@ def verify_news(
     Performs real-time source verification.
 
     IMPORTANT:
-        ML prediction is NOT used here to determine
-        factual truth.
 
-    The verifier searches current sources and only
-    marks REAL/FAKE when there is claim-level evidence.
+    ML prediction is NOT used to determine factual truth.
 
-    Otherwise:
+    Google News RSS is used for source discovery.
+
+    Trusted publisher pages are then fetched directly.
+
+    The actual article text is examined before assigning
+    REAL or FAKE.
+
+    If evidence is insufficient:
         UNVERIFIED
     """
 
@@ -916,21 +1836,28 @@ def verify_news(
 
         return {
 
-            "status": "not_found",
+            "status":
+                "not_found",
 
-            "query": "",
+            "query":
+                "",
 
-            "results": [],
+            "results":
+                [],
 
-            "trusted_count": 0,
+            "trusted_count":
+                0,
 
-            "claim": None,
+            "claim":
+                None,
 
             "assessment": {
 
-                "status": "UNVERIFIED",
+                "status":
+                    "UNVERIFIED",
 
-                "label": "🟡 UNVERIFIED",
+                "label":
+                    "🟡 UNVERIFIED",
 
                 "reason":
                     "No text was provided."
@@ -951,7 +1878,7 @@ def verify_news(
 
 
     # ========================================================
-    # BUILD SEARCHES
+    # BUILD SEARCH QUERIES
     # ========================================================
 
     general_query = _clean_query(
@@ -960,9 +1887,17 @@ def verify_news(
 
     if claim:
 
-        subject = claim["subject"]
-        role = claim["role"]
-        target = claim["target"]
+        subject = claim[
+            "subject"
+        ]
+
+        role = claim[
+            "role"
+        ]
+
+        target = claim[
+            "target"
+        ]
 
         exact_query = (
             f'"{subject}" '
@@ -988,16 +1923,17 @@ def verify_news(
 
 
     # ========================================================
-    # SEARCH
+    # SEARCH CURRENT SOURCES
     # ========================================================
 
     all_results = []
+
+    exact_results = []
 
     target_results = []
 
     try:
 
-        # Exact claim search
         if claim:
 
             exact_results = _search_news(
@@ -1022,32 +1958,42 @@ def verify_news(
                 max_results
             )
 
-            all_results = exact_results
+            all_results = (
+                exact_results
+            )
 
 
     except Exception as e:
 
         return {
 
-            "status": "error",
+            "status":
+                "error",
 
-            "query": general_query,
+            "query":
+                general_query,
 
-            "results": [],
+            "results":
+                [],
 
-            "trusted_count": 0,
+            "trusted_count":
+                0,
 
-            "claim": claim,
+            "claim":
+                claim,
 
             "assessment": {
 
-                "status": "UNVERIFIED",
+                "status":
+                    "UNVERIFIED",
 
-                "label": "🟡 UNVERIFIED",
+                "label":
+                    "🟡 UNVERIFIED",
 
                 "reason":
                     "Real-time verification could not "
-                    f"be completed: {str(e)}"
+                    "be completed: "
+                    + str(e)
             },
 
             "message":
@@ -1057,7 +2003,7 @@ def verify_news(
 
 
     # ========================================================
-    # REMOVE DUPLICATES
+    # REMOVE DUPLICATE LINKS
     # ========================================================
 
     unique_results = []
@@ -1072,9 +2018,12 @@ def verify_news(
         )
 
         if link in seen_links:
+
             continue
 
-        seen_links.add(link)
+        seen_links.add(
+            link
+        )
 
         unique_results.append(
             result
@@ -1085,13 +2034,149 @@ def verify_news(
 
 
     # ========================================================
+    # FETCH ACTUAL ARTICLE PAGES
+    # ========================================================
+
+    # We fetch trusted sources first.
+    # This reduces unnecessary requests.
+
+    trusted_results = [
+
+        result
+        for result in all_results
+        if result.get(
+            "trusted",
+            False
+        )
+    ]
+
+    trusted_results = (
+        trusted_results[:max_results]
+    )
+
+    enriched_trusted = (
+        _attach_article_evidence(
+            trusted_results
+        )
+    )
+
+
+    # ========================================================
+    # MERGE ARTICLE DATA BACK
+    # ========================================================
+
+    enriched_by_link = {
+
+        item.get(
+            "link",
+            ""
+        ): item
+
+        for item in enriched_trusted
+    }
+
+
+    final_results = []
+
+    for result in all_results:
+
+        link = result.get(
+            "link",
+            ""
+        )
+
+        if link in enriched_by_link:
+
+            final_results.append(
+                enriched_by_link[
+                    link
+                ]
+            )
+
+        else:
+
+            final_results.append(
+                result
+            )
+
+
+    all_results = final_results
+
+
+    # ========================================================
+    # REBUILD EXACT / TARGET RESULT LISTS
+    # ========================================================
+
+    result_by_link = {
+
+        item.get(
+            "link",
+            ""
+        ): item
+
+        for item in all_results
+    }
+
+
+    exact_results = [
+
+        result_by_link.get(
+            item.get(
+                "link",
+                ""
+            ),
+            item
+        )
+
+        for item in exact_results
+    ]
+
+
+    target_results = [
+
+        result_by_link.get(
+            item.get(
+                "link",
+                ""
+            ),
+            item
+        )
+
+        for item in target_results
+    ]
+
+
+    # ========================================================
     # TRUSTED SOURCE COUNT
     # ========================================================
 
     trusted_count = sum(
+
         1
+
         for result in all_results
-        if result["trusted"]
+
+        if result.get(
+            "trusted",
+            False
+        )
+    )
+
+
+    # ========================================================
+    # ARTICLE FETCH COUNT
+    # ========================================================
+
+    article_fetched_count = sum(
+
+        1
+
+        for result in all_results
+
+        if result.get(
+            "article_fetched",
+            False
+        )
     )
 
 
@@ -1114,24 +2199,35 @@ def verify_news(
 
         return {
 
-            "status": "not_found",
+            "status":
+                "not_found",
 
-            "query": general_query,
+            "query":
+                general_query,
 
-            "results": [],
+            "results":
+                [],
 
-            "trusted_count": 0,
+            "trusted_count":
+                0,
 
-            "claim": claim,
+            "article_fetched_count":
+                0,
+
+            "claim":
+                claim,
 
             "assessment": {
 
-                "status": "UNVERIFIED",
+                "status":
+                    "UNVERIFIED",
 
-                "label": "🟡 UNVERIFIED",
+                "label":
+                    "🟡 UNVERIFIED",
 
                 "reason":
-                    "No current related sources were found."
+                    "No current related sources "
+                    "were found."
             },
 
             "message":
@@ -1141,24 +2237,35 @@ def verify_news(
 
 
     # ========================================================
-    # RETURN
+    # RETURN FINAL RESULT
     # ========================================================
 
     return {
 
-        "status": "found",
+        "status":
+            "found",
 
-        "query": general_query,
+        "query":
+            general_query,
 
-        "results": all_results,
+        "results":
+            all_results,
 
-        "trusted_count": trusted_count,
+        "trusted_count":
+            trusted_count,
 
-        "claim": claim,
+        "article_fetched_count":
+            article_fetched_count,
 
-        "assessment": assessment,
+        "claim":
+            claim,
+
+        "assessment":
+            assessment,
 
         "message":
-            "Current sources were retrieved and "
-            "evaluated using claim-level evidence."
+            "Current sources were retrieved. "
+            "Trusted publisher pages were fetched "
+            "where available, and claim-level evidence "
+            "was evaluated."
     }
