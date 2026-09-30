@@ -36,6 +36,7 @@ with st.sidebar:
     - 🔤 TF-IDF Feature Extraction
     - 🤖 ML Prediction
     - 🌐 Real-Time Source Verification
+    - 🧠 Claim-Level Evidence Analysis
     - 😊 Sentiment Analysis
     - 🏷️ POS Analysis
     - 📍 Named Entity Recognition
@@ -48,11 +49,16 @@ with st.sidebar:
 
     st.subheader("🤖 Model")
 
-    st.write("TF-IDF + Logistic Regression")
+    st.write(
+        "TF-IDF + Logistic Regression"
+    )
 
     st.markdown("---")
 
-    st.caption("Machine Learning + NLP + Real-Time Verification")
+    st.caption(
+        "Machine Learning + NLP + "
+        "Real-Time Evidence Verification"
+    )
 
 
 # ============================================================
@@ -62,9 +68,16 @@ with st.sidebar:
 st.title("📰 Fake News Detection System")
 
 st.write(
-    "Analyze news articles using Natural Language Processing "
-    "and Machine Learning to predict whether the article is "
-    "likely to be FAKE or REAL."
+    "Analyze news articles using Natural Language "
+    "Processing, Machine Learning and real-time "
+    "source evidence."
+)
+
+st.info(
+    "ℹ️ The ML model provides a preliminary textual "
+    "prediction. The final factual assessment uses "
+    "current source evidence and does not blindly "
+    "trust the ML prediction."
 )
 
 
@@ -77,7 +90,7 @@ st.header("📝 News Article Analysis")
 article_text = st.text_area(
     "Enter News Article",
     height=250,
-    placeholder="Paste the news article here..."
+    placeholder="Paste the news article or factual claim here..."
 )
 
 
@@ -85,11 +98,16 @@ article_text = st.text_area(
 # ANALYZE BUTTON
 # ============================================================
 
-if st.button("🔍 Analyze News", type="primary"):
+if st.button(
+    "🔍 Analyze News",
+    type="primary"
+):
 
     if not article_text.strip():
 
-        st.warning("⚠️ Please enter a news article first.")
+        st.warning(
+            "⚠️ Please enter a news article first."
+        )
 
     else:
 
@@ -97,27 +115,36 @@ if st.button("🔍 Analyze News", type="primary"):
         # MACHINE LEARNING PREDICTION
         # ====================================================
 
-        prediction, confidence, fake_probability, real_probability = (
-            classify_news(article_text)
+        (
+            prediction,
+            confidence,
+            fake_probability,
+            real_probability
+        ) = classify_news(
+            article_text
         )
 
 
         # ====================================================
-        # NLP FEATURE EXTRACTION
+        # NLP FEATURES
         # ====================================================
 
-        features = extract_features(article_text)
-
-
-        # ====================================================
-        # REAL-TIME SOURCE VERIFICATION
-        # ====================================================
-
-        verification = verify_news(article_text)
+        features = extract_features(
+            article_text
+        )
 
 
         # ====================================================
-        # SAVE PREDICTION HISTORY
+        # REAL-TIME VERIFICATION
+        # ====================================================
+
+        verification = verify_news(
+            article_text
+        )
+
+
+        # ====================================================
+        # SAVE ML PREDICTION
         # ====================================================
 
         save_prediction(
@@ -130,42 +157,56 @@ if st.button("🔍 Analyze News", type="primary"):
 
 
         # ====================================================
-        # PREDICTION RESULT
+        # ML RESULT
         # ====================================================
 
-        st.header("🎯 Prediction Result")
+        st.header(
+            "🤖 Machine Learning Prediction"
+        )
 
         if prediction == "FAKE":
 
-            st.error("🚨 FAKE NEWS")
+            st.error(
+                "🚨 ML Prediction: FAKE"
+            )
 
         else:
 
-            st.success("✅ REAL NEWS")
+            st.success(
+                "✅ ML Prediction: REAL"
+            )
 
 
         st.metric(
-            "Confidence",
+            "ML Confidence",
             f"{confidence * 100:.2f}%"
         )
 
 
-        st.info(
-            "The trained machine learning model classified this "
-            "article based on learned textual patterns."
+        st.caption(
+            "This prediction is based on patterns "
+            "learned from the training dataset. "
+            "It is not treated as final factual proof."
         )
 
 
         # ====================================================
-        # PREDICTION PROBABILITY
+        # PROBABILITIES
         # ====================================================
 
-        st.header("📊 Prediction Probability")
+        st.header(
+            "📊 ML Prediction Probability"
+        )
 
         st.bar_chart(
             {
-                "Fake": [fake_probability * 100],
-                "Real": [real_probability * 100]
+                "Fake": [
+                    fake_probability * 100
+                ],
+
+                "Real": [
+                    real_probability * 100
+                ]
             }
         )
 
@@ -188,23 +229,170 @@ if st.button("🔍 Analyze News", type="primary"):
 
 
         # ====================================================
-        # REAL-TIME SOURCE VERIFICATION
+        # FINAL EVIDENCE-BASED VERDICT
         # ====================================================
 
         st.markdown("---")
 
-        st.header("🌐 Real-Time Source Verification")
+        st.header(
+            "⚖️ Evidence-Based Final Verdict"
+        )
+
+        assessment = verification.get(
+            "assessment",
+            {}
+        )
+
+        final_status = assessment.get(
+            "status",
+            "UNVERIFIED"
+        )
+
+        final_label = assessment.get(
+            "label",
+            "🟡 UNVERIFIED"
+        )
+
+        final_reason = assessment.get(
+            "reason",
+            "There is not enough current evidence."
+        )
+
+
+        # ----------------------------------------------------
+        # REAL
+        # ----------------------------------------------------
+
+        if final_status == "REAL":
+
+            st.success(
+                final_label
+            )
+
+            st.write(
+                final_reason
+            )
+
+            st.info(
+                "Current evidence supports the claim. "
+                "This evidence-based result takes priority "
+                "over a conflicting ML prediction."
+            )
+
+
+        # ----------------------------------------------------
+        # FAKE
+        # ----------------------------------------------------
+
+        elif final_status == "FAKE":
+
+            st.error(
+                final_label
+            )
+
+            st.write(
+                final_reason
+            )
+
+            st.warning(
+                "The submitted claim is contradicted by "
+                "current evidence. The ML prediction is "
+                "shown separately and is not the reason "
+                "for this verdict."
+            )
+
+
+        # ----------------------------------------------------
+        # UNVERIFIED
+        # ----------------------------------------------------
+
+        else:
+
+            st.warning(
+                final_label
+            )
+
+            st.write(
+                final_reason
+            )
+
+            st.info(
+                "The available evidence is insufficient "
+                "to establish that the claim is true or "
+                "false. Therefore the system does not "
+                "force a FAKE/REAL decision."
+            )
+
+
+        # ====================================================
+        # CLAIM DETAILS
+        # ====================================================
+
+        claim = verification.get(
+            "claim"
+        )
+
+        if claim:
+
+            st.subheader(
+                "🔎 Detected Claim Structure"
+            )
+
+            c1, c2, c3 = st.columns(3)
+
+            with c1:
+
+                st.write(
+                    "**Subject**"
+                )
+
+                st.write(
+                    claim["subject"]
+                )
+
+            with c2:
+
+                st.write(
+                    "**Role / Predicate**"
+                )
+
+                st.write(
+                    claim["role"]
+                )
+
+            with c3:
+
+                st.write(
+                    "**Target**"
+                )
+
+                st.write(
+                    claim["target"]
+                )
+
+
+        # ====================================================
+        # REAL-TIME SOURCES
+        # ====================================================
+
+        st.markdown("---")
+
+        st.header(
+            "🌐 Real-Time Source Verification"
+        )
+
 
         if verification["status"] == "error":
 
             st.warning(
-                "⚠️ Real-time source verification is currently unavailable."
+                "⚠️ Real-time source verification "
+                "is currently unavailable."
             )
 
             st.caption(
                 verification.get(
                     "message",
-                    "Unable to retrieve current news sources."
+                    ""
                 )
             )
 
@@ -212,25 +400,31 @@ if st.button("🔍 Analyze News", type="primary"):
         elif verification["status"] == "not_found":
 
             st.info(
-                "🔎 No related current news reports were found."
+                "🔎 No related current news reports "
+                "were found."
             )
 
-            if verification.get("query"):
+            if verification.get(
+                "query"
+            ):
 
                 st.write(
-                    f"**Search Query:** {verification['query']}"
+                    f"**Search Query:** "
+                    f"{verification['query']}"
                 )
 
 
-        elif verification["status"] == "found":
+        else:
 
             st.success(
-                f"📰 Found {len(verification['results'])} "
-                f"related news report(s)."
+                f"📰 Found "
+                f"{len(verification['results'])} "
+                f"related source(s)."
             )
 
             st.write(
-                f"**Search Query:** {verification['query']}"
+                f"**Search Query:** "
+                f"{verification['query']}"
             )
 
             st.write(
@@ -238,52 +432,166 @@ if st.button("🔍 Analyze News", type="primary"):
                 f"{verification['trusted_count']}"
             )
 
-            st.markdown("---")
 
-            for result in verification["results"]:
+            # ------------------------------------------------
+            # SUPPORTING SOURCES
+            # ------------------------------------------------
 
-                source_label = result["source"]
+            supporting_sources = (
+                assessment.get(
+                    "supporting_sources",
+                    []
+                )
+            )
 
-                if result["trusted"]:
+            if supporting_sources:
 
-                    source_label += " ✅ Trusted Source"
+                st.subheader(
+                    "🟢 Supporting Evidence"
+                )
 
+                for result in supporting_sources:
+
+                    st.markdown(
+                        f"### 📰 {result['title']}"
+                    )
+
+                    st.write(
+                        f"**Source:** "
+                        f"{result['source']} "
+                        f"✅ Trusted"
+                    )
+
+                    if result.get(
+                        "published"
+                    ):
+
+                        st.write(
+                            f"**Published:** "
+                            f"{result['published']}"
+                        )
+
+                    if result.get(
+                        "link"
+                    ):
+
+                        st.markdown(
+                            f"[🔗 Read Source]"
+                            f"({result['link']})"
+                        )
+
+                    st.markdown("---")
+
+
+            # ------------------------------------------------
+            # CONTRADICTING SOURCES
+            # ------------------------------------------------
+
+            contradicting_sources = (
+                assessment.get(
+                    "contradicting_sources",
+                    []
+                )
+            )
+
+            if contradicting_sources:
+
+                st.subheader(
+                    "🔴 Contradicting Evidence"
+                )
+
+                for result in contradicting_sources:
+
+                    st.markdown(
+                        f"### 📰 {result['title']}"
+                    )
+
+                    st.write(
+                        f"**Source:** "
+                        f"{result['source']} "
+                        f"✅ Trusted"
+                    )
+
+                    if result.get(
+                        "published"
+                    ):
+
+                        st.write(
+                            f"**Published:** "
+                            f"{result['published']}"
+                        )
+
+                    if result.get(
+                        "link"
+                    ):
+
+                        st.markdown(
+                            f"[🔗 Read Source]"
+                            f"({result['link']})"
+                        )
+
+                    st.markdown("---")
+
+
+            # ------------------------------------------------
+            # OTHER SOURCES
+            # ------------------------------------------------
+
+            st.subheader(
+                "📰 Retrieved Sources"
+            )
+
+            for result in verification[
+                "results"
+            ]:
 
                 st.markdown(
                     f"### 📰 {result['title']}"
                 )
 
-                st.write(
-                    f"**Source:** {source_label}"
+                source_label = (
+                    result["source"]
                 )
 
-                if result["published"]:
+                if result["trusted"]:
 
-                    st.write(
-                        f"**Published:** {result['published']}"
+                    source_label += (
+                        " ✅ Trusted Source"
                     )
 
-                if result["link"]:
+                st.write(
+                    f"**Source:** "
+                    f"{source_label}"
+                )
+
+                if result.get(
+                    "published"
+                ):
+
+                    st.write(
+                        f"**Published:** "
+                        f"{result['published']}"
+                    )
+
+                if result.get(
+                    "link"
+                ):
 
                     st.markdown(
-                        f"[🔗 Read Source]({result['link']})"
+                        f"[🔗 Read Source]"
+                        f"({result['link']})"
                     )
 
                 st.markdown("---")
-
-
-            st.info(
-                "ℹ️ Source verification provides supporting evidence "
-                "from current news reports. It does not automatically "
-                "change the ML model's FAKE/REAL prediction."
-            )
 
 
         # ====================================================
         # TEXT STATISTICS
         # ====================================================
 
-        st.header("📈 Text Statistics")
+        st.header(
+            "📈 Text Statistics"
+        )
 
         col1, col2, col3 = st.columns(3)
 
@@ -313,7 +621,9 @@ if st.button("🔍 Analyze News", type="primary"):
         # SENTIMENT ANALYSIS
         # ====================================================
 
-        st.header("😊 Sentiment Analysis")
+        st.header(
+            "😊 Sentiment Analysis"
+        )
 
         st.write(
             f"**Overall Sentiment:** "
@@ -356,7 +666,9 @@ if st.button("🔍 Analyze News", type="primary"):
         # WRITING STYLE
         # ====================================================
 
-        st.header("✍️ Writing Style")
+        st.header(
+            "✍️ Writing Style"
+        )
 
         col1, col2, col3 = st.columns(3)
 
@@ -386,15 +698,21 @@ if st.button("🔍 Analyze News", type="primary"):
         # SENSATIONAL LANGUAGE
         # ====================================================
 
-        st.header("🚨 Sensational Language")
+        st.header(
+            "🚨 Sensational Language"
+        )
 
-        if features["sensational_words"]:
+        if features[
+            "sensational_words"
+        ]:
 
             st.write(
                 "Detected sensational words:"
             )
 
-            for word in features["sensational_words"]:
+            for word in features[
+                "sensational_words"
+            ]:
 
                 st.warning(
                     f"⚡ {word}"
@@ -403,23 +721,30 @@ if st.button("🔍 Analyze News", type="primary"):
         else:
 
             st.success(
-                "No predefined sensational words detected."
+                "No predefined sensational "
+                "words detected."
             )
 
 
         # ====================================================
-        # CLICKBAIT ANALYSIS
+        # CLICKBAIT
         # ====================================================
 
-        st.header("🎯 Clickbait Pattern Analysis")
+        st.header(
+            "🎯 Clickbait Pattern Analysis"
+        )
 
-        if features["clickbait_phrases"]:
+        if features[
+            "clickbait_phrases"
+        ]:
 
             st.write(
                 "Detected clickbait phrases:"
             )
 
-            for phrase in features["clickbait_phrases"]:
+            for phrase in features[
+                "clickbait_phrases"
+            ]:
 
                 st.warning(
                     f"🎯 {phrase}"
@@ -428,7 +753,8 @@ if st.button("🔍 Analyze News", type="primary"):
         else:
 
             st.success(
-                "No predefined clickbait phrases detected."
+                "No predefined clickbait "
+                "phrases detected."
             )
 
 
@@ -436,7 +762,9 @@ if st.button("🔍 Analyze News", type="primary"):
         # POS ANALYSIS
         # ====================================================
 
-        st.header("🏷️ Part-of-Speech Analysis")
+        st.header(
+            "🏷️ Part-of-Speech Analysis"
+        )
 
         col1, col2, col3 = st.columns(3)
 
@@ -463,14 +791,20 @@ if st.button("🔍 Analyze News", type="primary"):
 
 
         # ====================================================
-        # NAMED ENTITY RECOGNITION
+        # NER
         # ====================================================
 
-        st.header("📍 Named Entity Recognition")
+        st.header(
+            "📍 Named Entity Recognition"
+        )
 
-        if features["named_entities"]:
+        if features[
+            "named_entities"
+        ]:
 
-            for entity, label in features["named_entities"]:
+            for entity, label in features[
+                "named_entities"
+            ]:
 
                 st.write(
                     f"**{entity}** — `{label}`"
@@ -487,16 +821,21 @@ if st.button("🔍 Analyze News", type="primary"):
         # REPEATED WORDS
         # ====================================================
 
-        st.header("🔁 Repeated Words")
+        st.header(
+            "🔁 Repeated Words"
+        )
 
-        repeated_words = features["repeated_words"]
+        repeated_words = features[
+            "repeated_words"
+        ]
 
         if repeated_words:
 
             for word, count in repeated_words:
 
                 st.write(
-                    f"**{word}** — {count} times"
+                    f"**{word}** — "
+                    f"{count} times"
                 )
 
         else:
@@ -512,7 +851,9 @@ if st.button("🔍 Analyze News", type="primary"):
 
 st.markdown("---")
 
-st.header("🤖 Model Information")
+st.header(
+    "🤖 Model Information"
+)
 
 col1, col2, col3 = st.columns(3)
 
@@ -533,8 +874,9 @@ with col2:
 with col3:
 
     st.info(
-        "**Approach**\n\n"
-        "Machine Learning + NLP + Real-Time Verification"
+        "**Verification Approach**\n\n"
+        "NLP + ML + Real-Time "
+        "Claim-Level Evidence"
     )
 
 
@@ -544,13 +886,17 @@ with col3:
 
 st.markdown("---")
 
-st.header("📊 Prediction History")
+st.header(
+    "📊 Prediction History"
+)
 
 history = load_history()
 
 if history:
 
-    total_predictions = len(history)
+    total_predictions = len(
+        history
+    )
 
     fake_count = sum(
         1
@@ -564,10 +910,6 @@ if history:
         if item["Prediction"] == "REAL"
     )
 
-
-    # --------------------------------------------------------
-    # HISTORY SUMMARY
-    # --------------------------------------------------------
 
     col1, col2, col3 = st.columns(3)
 
@@ -593,22 +935,25 @@ if history:
         )
 
 
-    # --------------------------------------------------------
-    # HISTORY ENTRIES
-    # --------------------------------------------------------
+    st.subheader(
+        "Recent Predictions"
+    )
 
-    st.subheader("Recent Predictions")
+    for item in reversed(
+        history
+    ):
 
-    for item in reversed(history):
-
-        prediction = item["Prediction"]
+        prediction = item[
+            "Prediction"
+        ]
 
         if prediction == "FAKE":
 
             st.error(
                 f"🚨 **FAKE** | "
                 f"{item['Time']} | "
-                f"Confidence: {item['Confidence']}\n\n"
+                f"Confidence: "
+                f"{item['Confidence']}\n\n"
                 f"{item['Article']}"
             )
 
@@ -617,7 +962,8 @@ if history:
             st.success(
                 f"✅ **REAL** | "
                 f"{item['Time']} | "
-                f"Confidence: {item['Confidence']}\n\n"
+                f"Confidence: "
+                f"{item['Confidence']}\n\n"
                 f"{item['Article']}"
             )
 
@@ -636,6 +982,6 @@ st.markdown("---")
 
 st.caption(
     "📰 Fake News Detection System | "
-    "Machine Learning + Natural Language Processing + "
-    "Real-Time Source Verification"
+    "Machine Learning + NLP + "
+    "Real-Time Claim-Level Verification"
 )
